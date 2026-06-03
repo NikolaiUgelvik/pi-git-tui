@@ -66,7 +66,7 @@ export class DiffViewerFrame extends DiffViewerCore {
     }
     const focusLabel = this.focusedPanel === "tree" ? "files" : "diff"
     const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code"
-    const enterAction = this.focusedPanel === "tree" ? " • Enter stage/unstage" : ""
+    const enterAction = this.focusedPanel === "tree" ? " • Enter stage/unstage • Shift+Enter stage/unstage all" : ""
     return fit(
       this.theme.fg(
         "dim",

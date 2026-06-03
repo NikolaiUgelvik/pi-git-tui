@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent"
 import { matchesKey } from "@earendil-works/pi-tui"
-import { loadWorkingTreeDiff, stageOrUnstageFile } from "./git.js"
+import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
 import { fit } from "./render-text.js"
 import { buildTreeRows } from "./tree.js"
 import { type CommitSummary, type DiffDocument, type FocusPanel, type HelpContext, MAX_VIEW_HEIGHT } from "./types.js"
@@ -148,6 +148,7 @@ export class DiffViewerCore {
   protected handleViewerNavigationInput(data: string): void {
     const handlers = [
       () => this.handleFocusToggle(data),
+      () => this.handleStageAllInput(data),
       () => this.handleFileStageToggle(data),
       () => this.handleFileStep(data),
       () => this.handleArrowScroll(data),
@@ -166,6 +167,19 @@ export class DiffViewerCore {
       return false
     }
     this.focusedPanel = this.focusedPanel === "tree" ? "diff" : "tree"
+    return true
+  }
+
+  protected handleStageAllInput(data: string): boolean {
+    if (!this.isShiftEnter(data)) {
+      return false
+    }
+    if (this.document.mode !== "working") {
+      this.error = "Staging is only available in the working tree"
+      this.statusMessage = undefined
+      return true
+    }
+    this.stageAllVisibleChanges().catch((error: unknown) => this.showAsyncError(error))
     return true
   }
 
@@ -259,6 +273,10 @@ export class DiffViewerCore {
 
   protected isEnter(data: string): boolean {
     return matchesKey(data, "enter") || matchesKey(data, "return") || data === "\r" || data === "\n"
+  }
+
+  protected isShiftEnter(data: string): boolean {
+    return matchesKey(data, "shift+enter") || data === "\x1b[13;2u"
   }
 
   protected isPageUp(data: string): boolean {
@@ -379,6 +397,22 @@ export class DiffViewerCore {
       const message = await stageOrUnstageFile(this.pi, this.ctx.cwd, path, this.ctx.signal)
       await this.refreshWorkingTreePreservingFile(path)
       this.statusMessage = message
+    } catch (error) {
+      this.statusMessage = undefined
+      this.error = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.requestRender()
+    }
+  }
+
+  protected async stageAllVisibleChanges(): Promise<void> {
+    this.error = undefined
+    this.statusMessage = "Staging all changes…"
+    this.requestRender()
+    try {
+      this.statusMessage = await toggleAllChangesStaged(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.resetSelectionToFirstTreeFile()
     } catch (error) {
       this.statusMessage = undefined
       this.error = error instanceof Error ? error.message : String(error)

@@ -294,6 +294,46 @@ export async function stageOrUnstageFile(
   return `Staged ${path}`
 }
 
+async function allChangesAreStaged(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<boolean> {
+  const stagedFiles = await listStagedFiles(pi, root, signal)
+  if (stagedFiles.size === 0) {
+    return false
+  }
+  const unstagedResult = await git(pi, root, ["diff", "--quiet", "--"], signal)
+  if (unstagedResult.code > 1) {
+    throw new Error(compactGitOutput(unstagedResult) || "git diff --quiet failed")
+  }
+  const untrackedFiles = await listUntrackedFiles(pi, root, signal)
+  return unstagedResult.code === 0 && untrackedFiles.length === 0
+}
+
+async function unstageAllChanges(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<string> {
+  const restoreArgs = ["restore", "--staged", "--", "."]
+  const restoreResult = await git(pi, root, restoreArgs, signal)
+  if (restoreResult.code === 0) {
+    return "Unstaged all changes"
+  }
+  const resetArgs = ["reset", "--", "."]
+  const resetResult = await git(pi, root, resetArgs, signal)
+  if (resetResult.code === 0) {
+    return "Unstaged all changes"
+  }
+  throw new Error(compactGitOutput(resetResult) || compactGitOutput(restoreResult) || "Could not unstage changes")
+}
+
+export async function toggleAllChangesStaged(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  if (await allChangesAreStaged(pi, root, signal)) {
+    return unstageAllChanges(pi, root, signal)
+  }
+  const args = ["add", "--all"]
+  assertGitSuccess(await git(pi, root, args, signal), args)
+  return "Staged all changes"
+}
+
 export async function runGitCommit(
   pi: ExtensionAPI,
   cwd: string,

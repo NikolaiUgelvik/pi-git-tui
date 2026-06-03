@@ -98,6 +98,7 @@ export class DiffViewer extends DiffViewerCommandMenu {
           { keys: "↑/↓ or j/k", action: "Move files when focused on Files; scroll code in Diff" },
           { keys: "n / p", action: "Move to the next or previous file" },
           { keys: "Enter", action: "Stage or unstage the selected file in the working tree" },
+          { keys: "Shift+Enter", action: "Stage all changes, or unstage all when everything is staged" },
           { keys: "PgUp/PgDn", action: "Scroll the diff by half a page" },
           { keys: "Space", action: "Scroll the diff down by half a page" },
           { keys: "Home/End", action: "Jump to the first or last file/line" },
