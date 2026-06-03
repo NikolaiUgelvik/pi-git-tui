@@ -21,10 +21,13 @@ Opens a two-panel TUI:
 - `PageUp` / `PageDown`: scroll the diff
 - `Home` / `End`: jump within the focused panel
 - `c`: choose the working tree or a recent commit and view that diff
-- Type in the commit picker to search/filter commits; use `Backspace` to edit
+- `Ctrl+P`: open a searchable git command menu
+- Type in the commit picker or command menu to search/filter; use `Backspace` to edit
 - Reopening the commit picker restores its last search/selection state
-- `Esc`: close the commit picker and return to the diff view
+- `Esc`: close the active picker/menu or close the viewer
 - `q`: close the viewer
+
+The command menu includes `Fetch`, `Pull`, `Pull (Rebase)`, `Push`, and `Force Push`.
 
 By default `/diff` opens the current working tree diff against `HEAD`, including staged and unstaged changes. Untracked text files are appended to the working-tree view.
 

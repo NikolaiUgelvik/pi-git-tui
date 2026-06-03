@@ -17,6 +17,13 @@ interface CommitSummary {
 
 type CommitPickerItem = { type: "working" } | { type: "commit"; commit: CommitSummary }
 
+interface GitCommand {
+  label: string
+  description: string
+  args: string[]
+  refreshDiff: boolean
+}
+
 interface DiffFile {
   path: string
   oldPath?: string
@@ -81,6 +88,24 @@ const DIFF_LINE_STYLE_RULES: DiffLineStyleRule[] = [
   { matches: (line) => line.startsWith("@@"), color: "accent" },
   { matches: isDiffTitleLine, color: "toolTitle", bold: true },
   { matches: isDiffMetadataLine, color: "muted" },
+]
+
+const GIT_COMMANDS: GitCommand[] = [
+  { label: "Fetch", description: "Fetch updates from the default remote", args: ["fetch"], refreshDiff: false },
+  { label: "Pull", description: "Pull updates into the current branch", args: ["pull"], refreshDiff: true },
+  {
+    label: "Pull (Rebase)",
+    description: "Pull updates and rebase local commits",
+    args: ["pull", "--rebase"],
+    refreshDiff: true,
+  },
+  { label: "Push", description: "Push the current branch", args: ["push"], refreshDiff: false },
+  {
+    label: "Force Push",
+    description: "Push the current branch with --force-with-lease",
+    args: ["push", "--force-with-lease"],
+    refreshDiff: false,
+  },
 ]
 
 function isEnter(data: string): boolean {
@@ -429,6 +454,28 @@ async function loadCommitDiff(
   return buildDocument("commit", `Commit ${commit.hash}`, commit.message, result.stdout, commit)
 }
 
+async function runGitCommand(
+  pi: ExtensionAPI,
+  cwd: string,
+  command: GitCommand,
+  signal?: AbortSignal,
+): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  const result = await git(pi, root, command.args, signal)
+  const output = [result.stdout, result.stderr]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+  if (result.code !== 0) {
+    throw new Error(output || `git ${command.args.join(" ")} failed`)
+  }
+  return output ? `${command.label} complete: ${output}` : `${command.label} complete`
+}
+
 interface TreeRow {
   label: string
   fileIndex?: number
@@ -488,11 +535,16 @@ class DiffViewer {
   private diffScroll = 0
   private commitScroll = 0
   private selectedCommitIndex = 0
+  private commandMenuScroll = 0
+  private selectedCommandIndex = 0
   private focusedPanel: FocusPanel = "tree"
   private commits: CommitSummary[] = []
   private commitSearchQuery = ""
+  private commandMenuSearchQuery = ""
   private pickerState: "closed" | "loading" | "open" = "closed"
+  private commandMenuState: "closed" | "loading" | "open" = "closed"
   private loadingMessage: string | undefined
+  private statusMessage: string | undefined
   private error: string | undefined
 
   constructor(
@@ -514,11 +566,15 @@ class DiffViewer {
   }
 
   handleInput(data: string): void {
+    if (this.commandMenuState !== "closed") {
+      this.handleCommandMenuInput(data)
+      return
+    }
     if (this.pickerState !== "closed") {
       this.handleCommitPickerInput(data)
       return
     }
-    if (this.handleCloseInput(data) || this.handleOpenPickerInput(data)) {
+    if (this.handleCloseInput(data) || this.handleOpenPickerInput(data) || this.handleOpenCommandMenuInput(data)) {
       return
     }
     this.handleViewerNavigationInput(data)
@@ -542,6 +598,14 @@ class DiffViewer {
       return false
     }
     this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    return true
+  }
+
+  private handleOpenCommandMenuInput(data: string): boolean {
+    if (!matchesKey(data, "ctrl+p")) {
+      return false
+    }
+    this.openCommandMenu()
     return true
   }
 
@@ -641,7 +705,9 @@ class DiffViewer {
 
   private showAsyncError(error: unknown): void {
     this.error = error instanceof Error ? error.message : String(error)
+    this.statusMessage = undefined
     this.pickerState = "closed"
+    this.commandMenuState = "closed"
     this.loadingMessage = undefined
     this.requestRender()
   }
@@ -675,6 +741,9 @@ class DiffViewer {
     lines.push(fit(this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`), width))
     lines.push(frame(this.renderFooter(innerWidth)))
     lines.push(fit(this.theme.fg("border", `╰${"─".repeat(innerWidth)}╯`), width))
+    if (this.commandMenuState !== "closed") {
+      return this.renderCommandMenuOverlay(lines, width)
+    }
     if (this.pickerState !== "closed") {
       return this.renderCommitPickerOverlay(lines, width)
     }
@@ -717,12 +786,15 @@ class DiffViewer {
     if (this.error) {
       return fit(this.theme.fg("warning", `⚠ ${this.error} • q close`), width)
     }
+    if (this.statusMessage) {
+      return fit(this.theme.fg("success", `✓ ${this.statusMessage} • q close`), width)
+    }
     const focusLabel = this.focusedPanel === "tree" ? "files" : "diff"
     const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code"
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows} • PgUp/PgDn scroll • Home/End jump • c commits • q close`,
+        `focus:${focusLabel} • tab switch • n/p files • ${arrows} • PgUp/PgDn scroll • Home/End jump • c commits • ^P commands • q close`,
       ),
       width,
     )
@@ -828,6 +900,54 @@ class DiffViewer {
     this.diffScroll = 0
   }
 
+  private searchTokens(query: string): string[] {
+    return query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  }
+
+  private matchesSearch(value: string, tokens: string[]): boolean {
+    const haystack = value.toLowerCase()
+    return tokens.every((token) => haystack.includes(token))
+  }
+
+  private nextListSelectionIndex(data: string, selectedIndex: number, itemCount: number): number | undefined {
+    const lastIndex = Math.max(0, itemCount - 1)
+    if (matchesKey(data, "up")) {
+      return Math.max(0, selectedIndex - 1)
+    }
+    if (matchesKey(data, "down")) {
+      return Math.min(lastIndex, selectedIndex + 1)
+    }
+    return this.nextListSelectionPageIndex(data, selectedIndex, lastIndex)
+  }
+
+  private nextListSelectionPageIndex(data: string, selectedIndex: number, lastIndex: number): number | undefined {
+    if (isPageUp(data)) {
+      return Math.max(0, selectedIndex - 10)
+    }
+    if (isPageDown(data)) {
+      return Math.min(lastIndex, selectedIndex + 10)
+    }
+    if (matchesKey(data, "home")) {
+      return 0
+    }
+    if (matchesKey(data, "end")) {
+      return lastIndex
+    }
+  }
+
+  private nextListScroll(selectedIndex: number, currentScroll: number, itemCount: number, maxItems: number): number {
+    const maxScroll = Math.max(0, itemCount - maxItems)
+    const centeredScroll = Math.max(0, selectedIndex - Math.floor(maxItems / 2))
+    let scroll = Math.max(0, Math.min(currentScroll, maxScroll, centeredScroll))
+    if (selectedIndex < scroll) {
+      scroll = selectedIndex
+    }
+    if (selectedIndex >= scroll + maxItems) {
+      scroll = selectedIndex - maxItems + 1
+    }
+    return scroll
+  }
+
   private async openCommitPicker(): Promise<void> {
     this.error = undefined
     this.pickerState = "loading"
@@ -909,30 +1029,7 @@ class DiffViewer {
   }
 
   private nextCommitSelectionIndex(data: string): number | undefined {
-    const itemCount = this.commitPickerItemCount()
-    const lastIndex = Math.max(0, itemCount - 1)
-    if (matchesKey(data, "up")) {
-      return Math.max(0, this.selectedCommitIndex - 1)
-    }
-    if (matchesKey(data, "down")) {
-      return Math.min(lastIndex, this.selectedCommitIndex + 1)
-    }
-    return this.nextCommitSelectionPageIndex(data, lastIndex)
-  }
-
-  private nextCommitSelectionPageIndex(data: string, lastIndex: number): number | undefined {
-    if (isPageUp(data)) {
-      return Math.max(0, this.selectedCommitIndex - 10)
-    }
-    if (isPageDown(data)) {
-      return Math.min(lastIndex, this.selectedCommitIndex + 10)
-    }
-    if (matchesKey(data, "home")) {
-      return 0
-    }
-    if (matchesKey(data, "end")) {
-      return lastIndex
-    }
+    return this.nextListSelectionIndex(data, this.selectedCommitIndex, this.commitPickerItemCount())
   }
 
   private handleCommitSelection(data: string): boolean {
@@ -974,27 +1071,21 @@ class DiffViewer {
   private commitPickerItems(): CommitPickerItem[] {
     const workingItem: CommitPickerItem = { type: "working" }
     const commitItems = this.commits.map((commit): CommitPickerItem => ({ type: "commit", commit }))
-    const tokens = this.commitSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const tokens = this.searchTokens(this.commitSearchQuery)
     if (tokens.length === 0) {
       return [workingItem, ...commitItems]
     }
 
     const items: CommitPickerItem[] = []
-    if (this.matchesCommitSearch("working tree staged unstaged", tokens)) {
+    if (this.matchesSearch("working tree staged unstaged", tokens)) {
       items.push(workingItem)
     }
     items.push(
       ...commitItems.filter(
-        (item) =>
-          item.type === "commit" && this.matchesCommitSearch(`${item.commit.hash} ${item.commit.message}`, tokens),
+        (item) => item.type === "commit" && this.matchesSearch(`${item.commit.hash} ${item.commit.message}`, tokens),
       ),
     )
     return items
-  }
-
-  private matchesCommitSearch(value: string, tokens: string[]): boolean {
-    const haystack = value.toLowerCase()
-    return tokens.every((token) => haystack.includes(token))
   }
 
   private async selectWorkingTree(): Promise<void> {
@@ -1042,6 +1133,216 @@ class DiffViewer {
       this.loadingMessage = undefined
       this.requestRender()
     }
+  }
+
+  private openCommandMenu(): void {
+    this.error = undefined
+    this.statusMessage = undefined
+    this.commandMenuState = "open"
+    this.clampCommandSelection()
+    this.requestRender()
+  }
+
+  private handleCommandMenuInput(data: string): void {
+    if (this.closeCommandMenuOnEscape(data) || this.commandMenuState === "loading") {
+      return
+    }
+    this.updateCommandMenuInput(data)
+    this.clampCommandSelection()
+    this.requestRender()
+  }
+
+  private closeCommandMenuOnEscape(data: string): boolean {
+    if (!matchesKey(data, "escape")) {
+      return false
+    }
+    this.commandMenuState = "closed"
+    this.requestRender()
+    return true
+  }
+
+  private updateCommandMenuInput(data: string): void {
+    const handlers = [
+      () => this.handleCommandSearchBackspace(data),
+      () => this.handleCommandSearchText(data),
+      () => this.handleCommandSelectionMove(data),
+      () => this.handleCommandSelection(data),
+    ]
+    for (const handler of handlers) {
+      if (handler()) {
+        return
+      }
+    }
+  }
+
+  private handleCommandSearchBackspace(data: string): boolean {
+    if (!this.isBackspace(data)) {
+      return false
+    }
+    this.commandMenuSearchQuery = [...this.commandMenuSearchQuery].slice(0, -1).join("")
+    this.resetCommandMenuScroll()
+    return true
+  }
+
+  private handleCommandSearchText(data: string): boolean {
+    if (!isPrintableInput(data)) {
+      return false
+    }
+    this.commandMenuSearchQuery += data
+    this.resetCommandMenuScroll()
+    return true
+  }
+
+  private handleCommandSelectionMove(data: string): boolean {
+    const nextIndex = this.nextListSelectionIndex(data, this.selectedCommandIndex, this.commandMenuItemCount())
+    if (nextIndex === undefined) {
+      return false
+    }
+    this.selectedCommandIndex = nextIndex
+    return true
+  }
+
+  private handleCommandSelection(data: string): boolean {
+    if (!isEnter(data)) {
+      return false
+    }
+    const command = this.commandMenuItem(this.selectedCommandIndex)
+    if (!command) {
+      return false
+    }
+    this.runSelectedCommand(command).catch((error: unknown) => this.showAsyncError(error))
+    return true
+  }
+
+  private resetCommandMenuScroll(): void {
+    this.selectedCommandIndex = 0
+    this.commandMenuScroll = 0
+  }
+
+  private clampCommandSelection(): void {
+    this.selectedCommandIndex = Math.max(
+      0,
+      Math.min(Math.max(0, this.commandMenuItemCount() - 1), this.selectedCommandIndex),
+    )
+  }
+
+  private commandMenuItemCount(): number {
+    return this.commandMenuItems().length
+  }
+
+  private commandMenuItem(index: number): GitCommand | undefined {
+    return this.commandMenuItems()[index]
+  }
+
+  private commandMenuItems(): GitCommand[] {
+    const tokens = this.searchTokens(this.commandMenuSearchQuery)
+    if (tokens.length === 0) {
+      return GIT_COMMANDS
+    }
+    return GIT_COMMANDS.filter((command) =>
+      this.matchesSearch(`${command.label} ${command.description} git ${command.args.join(" ")}`, tokens),
+    )
+  }
+
+  private async runSelectedCommand(command: GitCommand): Promise<void> {
+    this.commandMenuState = "loading"
+    this.loadingMessage = `Running ${command.label}…`
+    this.error = undefined
+    this.statusMessage = undefined
+    this.requestRender()
+    try {
+      const message = await runGitCommand(this.pi, this.ctx.cwd, command, this.ctx.signal)
+      await this.refreshDocumentAfterCommand(command)
+      this.statusMessage = message
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.commandMenuState = "closed"
+      this.loadingMessage = undefined
+      this.requestRender()
+    }
+  }
+
+  private async refreshDocumentAfterCommand(command: GitCommand): Promise<void> {
+    if (!command.refreshDiff || this.document.mode !== "working") {
+      return
+    }
+    this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+    this.resetSelectionToFirstTreeFile()
+  }
+
+  private renderCommandMenuOverlay(baseLines: string[], width: number): string[] {
+    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
+    const overlay = this.commandMenuOverlayLines(layout)
+    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+  }
+
+  private commandMenuOverlayLines(layout: { overlayWidth: number; maxItems: number }): string[] {
+    const row = (content: string) => this.commitPickerOverlayRow(content, layout.overlayWidth)
+    return [
+      this.commitPickerBorder("top", layout.overlayWidth),
+      row(` ${this.theme.fg("accent", this.theme.bold("Command menu"))}`),
+      row(` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter run • esc cancel")}`),
+      row(this.renderCommandSearchLine()),
+      row(""),
+      ...this.commandMenuBodyRows(row, layout.maxItems),
+      row(""),
+      this.commitPickerBorder("bottom", layout.overlayWidth),
+    ]
+  }
+
+  private renderCommandSearchLine(): string {
+    const query =
+      this.commandMenuSearchQuery.length > 0
+        ? `${this.commandMenuSearchQuery}▌`
+        : this.theme.fg("muted", "type to filter commands")
+    const countLabel =
+      this.commandMenuSearchQuery.trim().length > 0
+        ? ` ${this.theme.fg("muted", `(${this.commandMenuItemCount()}/${GIT_COMMANDS.length})`)}`
+        : ""
+    return ` Search: ${query}${countLabel}`
+  }
+
+  private commandMenuBodyRows(row: (content: string) => string, maxItems: number): string[] {
+    if (this.commandMenuState === "loading") {
+      return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Running…")}`)]
+    }
+    this.clampCommandSelection()
+    if (this.commandMenuItemCount() === 0) {
+      return [row(` ${this.theme.fg("muted", "No matching commands")}`)]
+    }
+    return this.visibleCommandMenuItems(maxItems).map(({ command, index }) =>
+      row(this.renderCommandMenuItem(command, index)),
+    )
+  }
+
+  private visibleCommandMenuItems(maxItems: number): Array<{ command: GitCommand; index: number }> {
+    this.updateCommandMenuScroll(maxItems)
+    const visibleItems: Array<{ command: GitCommand; index: number }> = []
+    const end = Math.min(this.commandMenuItemCount(), this.commandMenuScroll + maxItems)
+    for (let index = this.commandMenuScroll; index < end; index++) {
+      const command = this.commandMenuItem(index)
+      if (command) {
+        visibleItems.push({ command, index })
+      }
+    }
+    return visibleItems
+  }
+
+  private updateCommandMenuScroll(maxItems: number): void {
+    this.commandMenuScroll = this.nextListScroll(
+      this.selectedCommandIndex,
+      this.commandMenuScroll,
+      this.commandMenuItemCount(),
+      maxItems,
+    )
+  }
+
+  private renderCommandMenuItem(command: GitCommand, index: number): string {
+    const selected = index === this.selectedCommandIndex
+    const marker = selected ? "▶" : " "
+    const line = ` ${marker} ${this.theme.fg("accent", command.label)} ${this.theme.fg("muted", command.description)}`
+    return selected ? this.theme.bg("selectedBg", line) : line
   }
 
   private renderCommitPickerOverlay(baseLines: string[], width: number): string[] {
@@ -1112,15 +1413,12 @@ class DiffViewer {
   }
 
   private updateCommitScroll(maxItems: number): void {
-    const maxScroll = Math.max(0, this.commitPickerItemCount() - maxItems)
-    const centeredScroll = Math.max(0, this.selectedCommitIndex - Math.floor(maxItems / 2))
-    this.commitScroll = Math.max(0, Math.min(this.commitScroll, maxScroll, centeredScroll))
-    if (this.selectedCommitIndex < this.commitScroll) {
-      this.commitScroll = this.selectedCommitIndex
-    }
-    if (this.selectedCommitIndex >= this.commitScroll + maxItems) {
-      this.commitScroll = this.selectedCommitIndex - maxItems + 1
-    }
+    this.commitScroll = this.nextListScroll(
+      this.selectedCommitIndex,
+      this.commitScroll,
+      this.commitPickerItemCount(),
+      maxItems,
+    )
   }
 
   private renderCommitPickerItem(item: CommitPickerItem, index: number): string {
