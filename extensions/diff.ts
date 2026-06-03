@@ -570,9 +570,6 @@ class DiffViewer {
 
 	private async openCommitPicker(): Promise<void> {
 		this.error = undefined;
-		this.commitSearchQuery = "";
-		this.selectedCommitIndex = 0;
-		this.commitScroll = 0;
 		this.pickerState = "loading";
 		this.loadingMessage = "Loading commits…";
 		this.requestRender();
