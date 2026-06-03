@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "sealed": true,
+  "entry": ["extensions/diff.ts", "tests/**/*.test.ts"],
+  "ignorePatterns": ["dist/**", "node_modules/**", ".cache/**", "coverage/**"],
+  "includeEntryExports": true,
+  "duplicates": {
+    "mode": "strict",
+    "minTokens": 80,
+    "minLines": 8,
+    "minOccurrences": 2,
+    "threshold": 0
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 30,
+    "maxCrap": 60
+  },
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-types": "error",
+    "private-type-leaks": "error",
+    "unused-dependencies": "error",
+    "unused-dev-dependencies": "error",
+    "unused-optional-dependencies": "error",
+    "unused-enum-members": "error",
+    "unused-class-members": "error",
+    "unresolved-imports": "error",
+    "unlisted-dependencies": "error",
+    "duplicate-exports": "error",
+    "type-only-dependencies": "error",
+    "test-only-dependencies": "error",
+    "circular-dependencies": "error",
+    "re-export-cycle": "error",
+    "boundary-violation": "error",
+    "coverage-gaps": "error",
+    "feature-flags": "error",
+    "stale-suppressions": "error",
+    "unused-catalog-entries": "error",
+    "empty-catalog-groups": "error",
+    "unresolved-catalog-references": "error",
+    "unused-dependency-overrides": "error",
+    "misconfigured-dependency-overrides": "error"
+  }
+}
