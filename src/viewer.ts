@@ -1,8 +1,9 @@
 import { fit } from "./render-text.js"
 import type { HelpContext } from "./types.js"
-import { DiffViewerCommandMenu } from "./viewer-command-menu.js"
+import { HELP_ACTIONS, HELP_TITLES, type HelpAction } from "./viewer-help.js"
+import { DiffViewerStashPicker } from "./viewer-stash-picker.js"
 
-export class DiffViewer extends DiffViewerCommandMenu {
+export class DiffViewer extends DiffViewerStashPicker {
   protected renderOverlays(baseLines: string[], width: number): string[] {
     const renderedLines = this.renderActiveOverlay(baseLines, width)
     if (this.helpContext === undefined) {
@@ -12,6 +13,9 @@ export class DiffViewer extends DiffViewerCommandMenu {
   }
 
   protected renderActiveOverlay(baseLines: string[], width: number): string[] {
+    if (this.hasFeatureOverlay()) {
+      return this.renderFeatureOverlay(baseLines, width)
+    }
     if (this.commitDialogState !== "closed") {
       return this.renderCommitDialogOverlay(baseLines, width)
     }
@@ -44,74 +48,19 @@ export class DiffViewer extends DiffViewerCommandMenu {
     ]
   }
 
+  protected override currentHelpContext(): HelpContext {
+    return this.featureHelpContext() ?? super.currentHelpContext()
+  }
+
   protected helpTitle(context: HelpContext): string {
-    switch (context) {
-      case "commitDialog":
-        return "Commit dialog help"
-      case "commandMenu":
-        return "Command menu help"
-      case "commitPicker":
-        return "Commit picker help"
-      case "viewer":
-        return "Diff viewer help"
-    }
+    return HELP_TITLES[context]
   }
 
-  protected helpActions(context: HelpContext): Array<{ keys?: string; action: string }> {
-    switch (context) {
-      case "commitDialog":
-        return [
-          { keys: "type", action: "Edit the commit message" },
-          { keys: "←/→", action: "Move the commit message caret" },
-          { keys: "Home/End", action: "Jump the caret to the start or end" },
-          { keys: "Backspace/Delete", action: "Delete around the caret" },
-          { keys: "*", action: "Generate a commit message from staged changes" },
-          { keys: "Enter", action: "Commit staged changes with the message" },
-          { keys: "Esc", action: "Cancel and close the commit dialog" },
-          { keys: "?", action: "Show or close this help" },
-        ]
-      case "commandMenu":
-        return [
-          { keys: "type", action: "Filter commands by label, description, or git args" },
-          { keys: "Backspace", action: "Delete the previous search character" },
-          { keys: "↑/↓", action: "Move to the previous or next command" },
-          { keys: "PgUp/PgDn", action: "Jump through commands by page" },
-          { keys: "Home/End", action: "Jump to the first or last command" },
-          { keys: "Enter", action: "Run the selected git command" },
-          { keys: "Esc", action: "Cancel and close the command menu" },
-          { keys: "?", action: "Show or close this help" },
-        ]
-      case "commitPicker":
-        return [
-          { keys: "type", action: "Filter commits by hash or message" },
-          { keys: "Backspace", action: "Delete the previous search character" },
-          { keys: "↑/↓", action: "Move to the previous or next entry" },
-          { keys: "PgUp/PgDn", action: "Jump through entries by page" },
-          { keys: "Home/End", action: "Jump to the first or last entry" },
-          { keys: "Enter", action: "Select the working tree or highlighted commit" },
-          { keys: "Esc", action: "Cancel and close the commit picker" },
-          { keys: "?", action: "Show or close this help" },
-        ]
-      case "viewer":
-        return [
-          { keys: "Tab", action: "Switch focus between the file tree and diff" },
-          { keys: "↑/↓ or j/k", action: "Move files when focused on Files; scroll code in Diff" },
-          { keys: "n / p", action: "Move to the next or previous file" },
-          { keys: "Enter", action: "Stage or unstage the selected file in the working tree" },
-          { keys: "Shift+Enter", action: "Stage all changes, or unstage all when everything is staged" },
-          { keys: "PgUp/PgDn", action: "Scroll the diff by half a page" },
-          { keys: "Space", action: "Scroll the diff down by half a page" },
-          { keys: "Home/End", action: "Jump to the first or last file/line" },
-          { keys: "c", action: "Open the commit picker" },
-          { keys: "C", action: "Open the staged changes commit dialog" },
-          { keys: "Ctrl+P", action: "Open the git command menu" },
-          { keys: "Esc / q", action: "Close the diff viewer" },
-          { keys: "?", action: "Show or close this help" },
-        ]
-    }
+  protected helpActions(context: HelpContext): HelpAction[] {
+    return HELP_ACTIONS[context]
   }
 
-  protected renderHelpAction(action: { keys?: string; action: string }): string {
+  protected renderHelpAction(action: HelpAction): string {
     if (!action.keys) {
       return ` ${this.theme.fg("muted", action.action)}`
     }
@@ -121,8 +70,10 @@ export class DiffViewer extends DiffViewerCommandMenu {
   handleInput(data: string): void {
     if (
       this.handleHelpInput(data) ||
+      this.handleFeatureOverlayInput(data) ||
       this.handleActiveOverlayInput(data) ||
       this.handleCloseInput(data) ||
+      this.handleFeatureOpenInput(data) ||
       this.handleOpenOverlayInput(data)
     ) {
       return

@@ -30,6 +30,7 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
 
   protected updateCommitDialogInput(data: string): void {
     const handlers = [
+      () => this.handleCommitAmendToggle(data),
       () => this.handleCommitMessageGeneration(data),
       () => this.handleCommitMessageCaretMove(data),
       () => this.handleCommitMessageBackspace(data),
@@ -60,6 +61,14 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
   protected setCommitMessageChars(chars: string[]): void {
     this.commitMessage = chars.join("")
     this.clampCommitMessageCaret(chars)
+  }
+
+  protected handleCommitAmendToggle(data: string): boolean {
+    if (!matchesKey(data, "ctrl+x") && data !== "\x18") {
+      return false
+    }
+    this.commitAmend = !this.commitAmend
+    return true
   }
 
   protected handleCommitMessageGeneration(data: string): boolean {
@@ -171,11 +180,12 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     this.statusMessage = undefined
     this.requestRender()
     try {
-      const output = await runGitCommit(this.pi, this.ctx.cwd, message, this.ctx.signal)
+      const output = await runGitCommit(this.pi, this.ctx.cwd, message, this.ctx.signal, this.commitAmend)
       this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
       this.resetSelectionToFirstTreeFile()
       this.commitMessage = ""
       this.commitMessageCaret = 0
+      this.commitAmend = false
       this.commitDialogState = "closed"
       this.statusMessage = output
     } catch (error) {
@@ -197,8 +207,10 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     const row = (content: string) => this.commitPickerOverlayRow(content, overlayWidth)
     return [
       this.commitPickerBorder("top", overlayWidth),
-      row(` ${this.theme.fg("accent", this.theme.bold("Commit staged changes"))}`),
-      row(` ${this.theme.fg("dim", "type message • ←/→ move • * generate • enter commit • ? help • esc cancel")}`),
+      row(` ${this.theme.fg("accent", this.theme.bold(this.commitDialogTitle()))}`),
+      row(
+        ` ${this.theme.fg("dim", "type message • Ctrl+X amend • ←/→ move • * generate • enter commit • ? help • esc cancel")}`,
+      ),
       row(""),
       ...this.commitDialogBodyRows(row),
       row(""),
@@ -206,11 +218,16 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     ]
   }
 
+  protected commitDialogTitle(): string {
+    return this.commitAmend ? "Amend last commit" : "Commit staged changes"
+  }
+
   protected commitDialogBodyRows(row: (content: string) => string): string[] {
     if (this.commitDialogState === "loading") {
       return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
     }
-    return [row(` Message: ${this.renderCommitMessageInput()}`)]
+    const mode = this.commitAmend ? this.theme.fg("warning", " amend") : this.theme.fg("muted", " normal")
+    return [row(` Mode:${mode}`), row(` Message: ${this.renderCommitMessageInput()}`)]
   }
 
   protected renderCommitMessageInput(): string {

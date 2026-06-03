@@ -1,4 +1,4 @@
-import type { CommitSummary, DiffDocument, DiffFile, DiffMode } from "./types.js"
+import type { CommitSummary, DiffDocument, DiffFile, DiffMode, RepositoryState } from "./types.js"
 
 function unquoteGitPath(path: string): string {
   let value = path.trim()
@@ -134,8 +134,14 @@ function parseDiff(raw: string): DiffFile[] {
   return diffChunks(normalizedDiffLines(raw)).map(diffFileFromChunk)
 }
 
-export function emptyDocument(title: string, subtitle: string, mode: DiffMode, commit?: CommitSummary): DiffDocument {
-  return { mode, title, subtitle, raw: "", files: [], commit }
+export function emptyDocument(
+  title: string,
+  subtitle: string,
+  mode: DiffMode,
+  commit?: CommitSummary,
+  repositoryState?: RepositoryState,
+): DiffDocument {
+  return { mode, title, subtitle, raw: "", files: [], commit, repositoryState }
 }
 
 export function buildDocument(
@@ -145,7 +151,14 @@ export function buildDocument(
   raw: string,
   commit?: CommitSummary,
   stagedPaths = new Set<string>(),
+  conflictedPaths = new Set<string>(),
+  untrackedPaths = new Set<string>(),
 ): DiffDocument {
-  const files = parseDiff(raw).map((file) => ({ ...file, staged: stagedPaths.has(file.path) }))
+  const files = parseDiff(raw).map((file) => ({
+    ...file,
+    status: conflictedPaths.has(file.path) ? "conflicted" : file.status,
+    staged: stagedPaths.has(file.path),
+    untracked: untrackedPaths.has(file.path) || undefined,
+  }))
   return { mode, title, subtitle, raw, files, commit }
 }

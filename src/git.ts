@@ -7,6 +7,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent"
 import { buildDocument, emptyDocument } from "./diff-parser.js"
+import { conflictedPaths, currentBranchStatusLabel } from "./git-status.js"
 import {
   COMMIT_LIMIT,
   type CommitSummary,
@@ -133,27 +134,31 @@ function joinDiffParts(parts: string[]): string {
 export async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<DiffDocument> {
   const root = await ensureGitRepository(pi, ctx.cwd, ctx.signal)
   if (!root) {
-    return emptyDocument("Not a git repository", ctx.cwd, "working")
+    return emptyDocument("Not a git repository", ctx.cwd, "working", undefined, "missing")
   }
 
   const [headExists, branch] = await Promise.all([
     hasHead(pi, root, ctx.signal),
     currentBranchLabel(pi, root, ctx.signal),
   ])
-  const [diffResult, untracked, stagedFiles] = await Promise.all([
+  const [diffResult, untracked, stagedFiles, conflicts, branchStatus] = await Promise.all([
     git(pi, root, workingTreeDiffArgs(headExists), ctx.signal),
     listUntrackedFiles(pi, root, ctx.signal),
     listStagedFiles(pi, root, ctx.signal),
+    conflictedPaths(pi, root, ctx.signal),
+    currentBranchStatusLabel(pi, root, branch, ctx.signal),
   ])
   const untrackedDiffs = await readUntrackedDiffs(pi, root, untracked, ctx.signal)
   const title = headExists ? "Working tree vs HEAD" : "Working tree (no commits yet)"
   return buildDocument(
     "working",
     title,
-    repositoryLabel(root, branch),
+    repositoryLabel(root, branchStatus),
     joinDiffParts([diffResult.stdout, ...untrackedDiffs]),
     undefined,
     stagedFiles,
+    conflicts,
+    new Set(untracked),
   )
 }
 
@@ -339,12 +344,13 @@ export async function runGitCommit(
   cwd: string,
   message: string,
   signal?: AbortSignal,
+  amend = false,
 ): Promise<string> {
   const root = await ensureGitRepository(pi, cwd, signal)
   if (!root) {
     throw new Error("Not a git repository")
   }
-  const args = ["commit", "-m", message]
+  const args = amend ? ["commit", "--amend", "-m", message] : ["commit", "-m", message]
   const result = await git(pi, root, args, signal)
   assertGitSuccess(result, args)
   return compactGitOutput(result) || "Commit complete"

@@ -25,6 +25,7 @@ export class DiffViewerCore {
   protected commandMenuSearchQuery = ""
   protected commitMessage = ""
   protected commitMessageCaret = 0
+  protected commitAmend = false
   protected pickerState: "closed" | "loading" | "open" = "closed"
   protected commandMenuState: "closed" | "loading" | "open" = "closed"
   protected commitDialogState: "closed" | "loading" | "open" = "closed"

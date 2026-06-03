@@ -125,6 +125,7 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
       this.statusMessage = message
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
+      await this.refreshDocumentAfterFailedCommand(command)
     } finally {
       this.commandMenuState = "closed"
       this.loadingMessage = undefined
@@ -138,6 +139,15 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
     }
     this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
     this.resetSelectionToFirstTreeFile()
+  }
+
+  protected async refreshDocumentAfterFailedCommand(command: GitCommand): Promise<void> {
+    try {
+      await this.refreshDocumentAfterCommand(command)
+    } catch (refreshError) {
+      const message = refreshError instanceof Error ? refreshError.message : String(refreshError)
+      this.error = `${this.error}; refresh failed: ${message}`
+    }
   }
 
   protected renderCommandMenuOverlay(baseLines: string[], width: number): string[] {

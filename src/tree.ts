@@ -27,21 +27,18 @@ function stagedGlyph(file: DiffFile): string {
   return file.staged ? "●" : " "
 }
 
+const STATUS_GLYPHS: Record<DiffFile["status"], string> = {
+  added: "A",
+  binary: "B",
+  conflicted: "U",
+  copied: "C",
+  deleted: "D",
+  modified: "M",
+  renamed: "R",
+}
+
 function statusGlyph(status: DiffFile["status"]): string {
-  switch (status) {
-    case "added":
-      return "A"
-    case "deleted":
-      return "D"
-    case "renamed":
-      return "R"
-    case "copied":
-      return "C"
-    case "binary":
-      return "B"
-    case "modified":
-      return "M"
-  }
+  return STATUS_GLYPHS[status]
 }
 
 function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFile): void {

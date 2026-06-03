@@ -64,13 +64,17 @@ export class DiffViewerFrame extends DiffViewerCore {
     if (this.statusMessage) {
       return fit(this.theme.fg("success", `✓ ${this.statusMessage} • ? help • q close`), width)
     }
+    if (this.document.repositoryState === "missing") {
+      return fit(this.theme.fg("dim", "No git repo • I init • ? help • q close"), width)
+    }
     const focusLabel = this.focusedPanel === "tree" ? "files" : "diff"
     const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code"
-    const enterAction = this.focusedPanel === "tree" ? " • Enter stage/unstage • Shift+Enter stage/unstage all" : ""
+    const enterAction =
+      this.focusedPanel === "tree" ? " • Enter stage/unstage • Shift+Enter stage/unstage all • D discard" : ""
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • ^P commands • ? help • q close`,
+        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • b branches • s stash • ^P commands • ? help • q close`,
       ),
       width,
     )
@@ -112,10 +116,7 @@ export class DiffViewerFrame extends DiffViewerCore {
   protected renderDiff(width: number, height: number): string[] {
     const file = this.document.files[this.selectedFileIndex]
     if (!file) {
-      const message =
-        this.document.mode === "working"
-          ? "Working tree is clean. Press c to inspect commit history."
-          : "This commit has no textual diff."
+      const message = this.emptyDiffMessage()
       return [fit(this.theme.fg("muted", message), width), ...new Array(height - 1).fill(" ".repeat(width))]
     }
 
@@ -129,6 +130,15 @@ export class DiffViewerFrame extends DiffViewerCore {
       visible.push(" ".repeat(width))
     }
     return visible
+  }
+
+  protected emptyDiffMessage(): string {
+    if (this.document.repositoryState === "missing") {
+      return "No git repository found here. Press I to initialize one."
+    }
+    return this.document.mode === "working"
+      ? "Working tree is clean. Press c to inspect commit history."
+      : "This commit has no textual diff."
   }
 
   protected colorDiffLine(line: string): string {
