@@ -57,6 +57,7 @@ interface GitExecResult {
 }
 
 type FocusPanel = "tree" | "diff"
+type HelpContext = "viewer" | "commitPicker" | "commandMenu" | "commitDialog"
 type ThemeColor = Parameters<Theme["fg"]>[0]
 
 const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor> = {
@@ -800,6 +801,7 @@ class DiffViewer {
   private pickerState: "closed" | "loading" | "open" = "closed"
   private commandMenuState: "closed" | "loading" | "open" = "closed"
   private commitDialogState: "closed" | "loading" | "open" = "closed"
+  private helpContext: HelpContext | undefined
   private loadingMessage: string | undefined
   private statusMessage: string | undefined
   private error: string | undefined
@@ -823,7 +825,12 @@ class DiffViewer {
   }
 
   handleInput(data: string): void {
-    if (this.handleActiveOverlayInput(data) || this.handleCloseInput(data) || this.handleOpenOverlayInput(data)) {
+    if (
+      this.handleHelpInput(data) ||
+      this.handleActiveOverlayInput(data) ||
+      this.handleCloseInput(data) ||
+      this.handleOpenOverlayInput(data)
+    ) {
       return
     }
     this.handleViewerNavigationInput(data)
@@ -832,6 +839,43 @@ class DiffViewer {
 
   invalidate(): void {
     // The viewer renders from current git data only; there is no cached external state to invalidate.
+  }
+
+  private handleHelpInput(data: string): boolean {
+    if (this.helpContext !== undefined) {
+      if (this.isHelpCloseInput(data)) {
+        this.helpContext = undefined
+        this.requestRender()
+      }
+      return true
+    }
+    if (!this.isHelpKey(data)) {
+      return false
+    }
+    this.helpContext = this.currentHelpContext()
+    this.requestRender()
+    return true
+  }
+
+  private isHelpCloseInput(data: string): boolean {
+    return this.isHelpKey(data) || matchesKey(data, "escape") || this.isKey(data, "q")
+  }
+
+  private isHelpKey(data: string): boolean {
+    return data === "?"
+  }
+
+  private currentHelpContext(): HelpContext {
+    if (this.commitDialogState !== "closed") {
+      return "commitDialog"
+    }
+    if (this.commandMenuState !== "closed") {
+      return "commandMenu"
+    }
+    if (this.pickerState !== "closed") {
+      return "commitPicker"
+    }
+    return "viewer"
   }
 
   private handleActiveOverlayInput(data: string): boolean {
@@ -1042,16 +1086,29 @@ class DiffViewer {
     lines.push(fit(this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`), width))
     lines.push(frame(this.renderFooter(innerWidth)))
     lines.push(fit(this.theme.fg("border", `╰${"─".repeat(innerWidth)}╯`), width))
+
+    return this.renderOverlays(lines, width)
+  }
+
+  private renderOverlays(baseLines: string[], width: number): string[] {
+    const renderedLines = this.renderActiveOverlay(baseLines, width)
+    if (this.helpContext === undefined) {
+      return renderedLines
+    }
+    return this.renderHelpOverlay(renderedLines, width)
+  }
+
+  private renderActiveOverlay(baseLines: string[], width: number): string[] {
     if (this.commitDialogState !== "closed") {
-      return this.renderCommitDialogOverlay(lines, width)
+      return this.renderCommitDialogOverlay(baseLines, width)
     }
     if (this.commandMenuState !== "closed") {
-      return this.renderCommandMenuOverlay(lines, width)
+      return this.renderCommandMenuOverlay(baseLines, width)
     }
     if (this.pickerState !== "closed") {
-      return this.renderCommitPickerOverlay(lines, width)
+      return this.renderCommitPickerOverlay(baseLines, width)
     }
-    return lines.map((line) => fit(line, width))
+    return baseLines.map((line) => fit(line, width))
   }
 
   private viewHeight(): number {
@@ -1088,10 +1145,10 @@ class DiffViewer {
 
   private renderFooter(width: number): string {
     if (this.error) {
-      return fit(this.theme.fg("warning", `⚠ ${this.error} • q close`), width)
+      return fit(this.theme.fg("warning", `⚠ ${this.error} • ? help • q close`), width)
     }
     if (this.statusMessage) {
-      return fit(this.theme.fg("success", `✓ ${this.statusMessage} • q close`), width)
+      return fit(this.theme.fg("success", `✓ ${this.statusMessage} • ? help • q close`), width)
     }
     const focusLabel = this.focusedPanel === "tree" ? "files" : "diff"
     const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code"
@@ -1099,7 +1156,7 @@ class DiffViewer {
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • ^P commands • q close`,
+        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • ^P commands • ? help • q close`,
       ),
       width,
     )
@@ -1722,6 +1779,97 @@ class DiffViewer {
     this.resetSelectionToFirstTreeFile()
   }
 
+  private renderHelpOverlay(baseLines: string[], width: number): string[] {
+    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
+    const overlay = this.helpOverlayLines(layout.overlayWidth)
+    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+  }
+
+  private helpOverlayLines(overlayWidth: number): string[] {
+    const row = (content: string) => this.commitPickerOverlayRow(content, overlayWidth)
+    const context = this.helpContext ?? "viewer"
+    return [
+      this.commitPickerBorder("top", overlayWidth),
+      row(` ${this.theme.fg("accent", this.theme.bold(this.helpTitle(context)))}`),
+      row(` ${this.theme.fg("dim", "press ? / esc / q to close help")}`),
+      row(""),
+      ...this.helpActions(context).map((action) => row(this.renderHelpAction(action))),
+      row(""),
+      this.commitPickerBorder("bottom", overlayWidth),
+    ]
+  }
+
+  private helpTitle(context: HelpContext): string {
+    switch (context) {
+      case "commitDialog":
+        return "Commit dialog help"
+      case "commandMenu":
+        return "Command menu help"
+      case "commitPicker":
+        return "Commit picker help"
+      case "viewer":
+        return "Diff viewer help"
+    }
+  }
+
+  private helpActions(context: HelpContext): Array<{ keys?: string; action: string }> {
+    switch (context) {
+      case "commitDialog":
+        return [
+          { keys: "type", action: "Edit the commit message" },
+          { keys: "Backspace", action: "Delete the previous character" },
+          { keys: "*", action: "Generate a commit message from staged changes" },
+          { keys: "Enter", action: "Commit staged changes with the message" },
+          { keys: "Esc", action: "Cancel and close the commit dialog" },
+          { keys: "?", action: "Show or close this help" },
+        ]
+      case "commandMenu":
+        return [
+          { keys: "type", action: "Filter commands by label, description, or git args" },
+          { keys: "Backspace", action: "Delete the previous search character" },
+          { keys: "↑/↓", action: "Move to the previous or next command" },
+          { keys: "PgUp/PgDn", action: "Jump through commands by page" },
+          { keys: "Home/End", action: "Jump to the first or last command" },
+          { keys: "Enter", action: "Run the selected git command" },
+          { keys: "Esc", action: "Cancel and close the command menu" },
+          { keys: "?", action: "Show or close this help" },
+        ]
+      case "commitPicker":
+        return [
+          { keys: "type", action: "Filter commits by hash or message" },
+          { keys: "Backspace", action: "Delete the previous search character" },
+          { keys: "↑/↓", action: "Move to the previous or next entry" },
+          { keys: "PgUp/PgDn", action: "Jump through entries by page" },
+          { keys: "Home/End", action: "Jump to the first or last entry" },
+          { keys: "Enter", action: "Select the working tree or highlighted commit" },
+          { keys: "Esc", action: "Cancel and close the commit picker" },
+          { keys: "?", action: "Show or close this help" },
+        ]
+      case "viewer":
+        return [
+          { keys: "Tab", action: "Switch focus between the file tree and diff" },
+          { keys: "↑/↓ or j/k", action: "Move files when focused on Files; scroll code in Diff" },
+          { keys: "n / p", action: "Move to the next or previous file" },
+          { keys: "Enter", action: "Stage or unstage the selected file in the working tree" },
+          { keys: "PgUp/PgDn", action: "Scroll the diff by half a page" },
+          { keys: "Space", action: "Scroll the diff down by half a page" },
+          { keys: "Home/End", action: "Jump to the first or last file/line" },
+          { keys: "c", action: "Open the commit picker" },
+          { keys: "C", action: "Open the staged changes commit dialog" },
+          { keys: "Ctrl+P", action: "Open the git command menu" },
+          { keys: "Esc / q", action: "Close the diff viewer" },
+          { keys: "?", action: "Show or close this help" },
+        ]
+    }
+  }
+
+  private renderHelpAction(action: { keys?: string; action: string }): string {
+    if (!action.keys) {
+      return ` ${this.theme.fg("muted", action.action)}`
+    }
+    return ` ${this.theme.fg("accent", fit(action.keys, 14))} ${action.action}`
+  }
+
   private renderCommitDialogOverlay(baseLines: string[], width: number): string[] {
     const layout = this.commitPickerOverlayLayout(baseLines.length, width)
     const overlay = this.commitDialogOverlayLines(layout.overlayWidth)
@@ -1733,7 +1881,7 @@ class DiffViewer {
     return [
       this.commitPickerBorder("top", overlayWidth),
       row(` ${this.theme.fg("accent", this.theme.bold("Commit staged changes"))}`),
-      row(` ${this.theme.fg("dim", "type message • * generate • enter commit • esc cancel")}`),
+      row(` ${this.theme.fg("dim", "type message • * generate • enter commit • ? help • esc cancel")}`),
       row(""),
       ...this.commitDialogBodyRows(row),
       row(""),
@@ -1760,7 +1908,7 @@ class DiffViewer {
     return [
       this.commitPickerBorder("top", layout.overlayWidth),
       row(` ${this.theme.fg("accent", this.theme.bold("Command menu"))}`),
-      row(` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter run • esc cancel")}`),
+      row(` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter run • ? help • esc cancel")}`),
       row(this.renderCommandSearchLine()),
       row(""),
       ...this.commandMenuBodyRows(row, layout.maxItems),
@@ -1845,7 +1993,9 @@ class DiffViewer {
     return [
       this.commitPickerBorder("top", layout.overlayWidth),
       row(` ${this.theme.fg("accent", this.theme.bold("Select commit"))}`),
-      row(` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter select • esc cancel")}`),
+      row(
+        ` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter select • ? help • esc cancel")}`,
+      ),
       row(this.renderCommitSearchLine()),
       row(""),
       ...this.commitPickerBodyRows(row, layout.maxItems),

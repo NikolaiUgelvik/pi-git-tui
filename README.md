@@ -25,9 +25,10 @@ Opens a two-panel TUI:
 - `C`: open a commit dialog for staged changes
 - `*`: generate a commit message with the current model while the commit dialog is open
 - `Ctrl+P`: open a searchable git command menu
+- `?`: open context-sensitive help for the viewer or active dialog
 - Type in the commit picker or command menu to search/filter; use `Backspace` to edit
 - Reopening the commit picker restores its last search/selection state
-- `Esc`: close the active picker/menu or close the viewer
+- `Esc`: close help, the active picker/menu, or the viewer
 - `q`: close the viewer
 
 The command menu includes `Fetch`, `Pull`, `Pull (Rebase)`, `Push`, and `Force Push`.
