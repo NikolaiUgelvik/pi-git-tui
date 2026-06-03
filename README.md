@@ -23,6 +23,7 @@ Opens a two-panel TUI:
 - `Home` / `End`: jump within the focused panel
 - `c`: choose the working tree or a recent commit and view that diff
 - `C`: open a commit dialog for staged changes
+- `←` / `→`, `Home` / `End`: move the caret while typing a commit message
 - `*`: generate a commit message with the current model while the commit dialog is open
 - `Ctrl+P`: open a searchable git command menu
 - `?`: open context-sensitive help for the viewer or active dialog

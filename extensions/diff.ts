@@ -798,6 +798,7 @@ class DiffViewer {
   private commitSearchQuery = ""
   private commandMenuSearchQuery = ""
   private commitMessage = ""
+  private commitMessageCaret = 0
   private pickerState: "closed" | "loading" | "open" = "closed"
   private commandMenuState: "closed" | "loading" | "open" = "closed"
   private commitDialogState: "closed" | "loading" | "open" = "closed"
@@ -1531,6 +1532,7 @@ class DiffViewer {
   private openCommitDialog(): void {
     this.error = undefined
     this.statusMessage = undefined
+    this.commitMessageCaret = this.commitMessageLength()
     this.commitDialogState = "open"
     this.requestRender()
   }
@@ -1555,7 +1557,9 @@ class DiffViewer {
   private updateCommitDialogInput(data: string): void {
     const handlers = [
       () => this.handleCommitMessageGeneration(data),
+      () => this.handleCommitMessageCaretMove(data),
       () => this.handleCommitMessageBackspace(data),
+      () => this.handleCommitMessageDelete(data),
       () => this.handleCommitSubmission(data),
       () => this.handleCommitMessageText(data),
     ]
@@ -1566,6 +1570,24 @@ class DiffViewer {
     }
   }
 
+  private commitMessageChars(): string[] {
+    return [...this.commitMessage]
+  }
+
+  private commitMessageLength(): number {
+    return this.commitMessageChars().length
+  }
+
+  private clampCommitMessageCaret(chars = this.commitMessageChars()): number {
+    this.commitMessageCaret = Math.max(0, Math.min(this.commitMessageCaret, chars.length))
+    return this.commitMessageCaret
+  }
+
+  private setCommitMessageChars(chars: string[]): void {
+    this.commitMessage = chars.join("")
+    this.clampCommitMessageCaret(chars)
+  }
+
   private handleCommitMessageGeneration(data: string): boolean {
     if (data !== "*") {
       return false
@@ -1574,11 +1596,52 @@ class DiffViewer {
     return true
   }
 
+  private handleCommitMessageCaretMove(data: string): boolean {
+    const chars = this.commitMessageChars()
+    this.clampCommitMessageCaret(chars)
+    if (matchesKey(data, "left")) {
+      this.commitMessageCaret = Math.max(0, this.commitMessageCaret - 1)
+      return true
+    }
+    if (matchesKey(data, "right")) {
+      this.commitMessageCaret = Math.min(chars.length, this.commitMessageCaret + 1)
+      return true
+    }
+    if (matchesKey(data, "home") || matchesKey(data, "ctrl+a")) {
+      this.commitMessageCaret = 0
+      return true
+    }
+    if (matchesKey(data, "end") || matchesKey(data, "ctrl+e")) {
+      this.commitMessageCaret = chars.length
+      return true
+    }
+    return false
+  }
+
   private handleCommitMessageBackspace(data: string): boolean {
     if (!this.isBackspace(data)) {
       return false
     }
-    this.commitMessage = [...this.commitMessage].slice(0, -1).join("")
+    const chars = this.commitMessageChars()
+    const caret = this.clampCommitMessageCaret(chars)
+    if (caret > 0) {
+      chars.splice(caret - 1, 1)
+      this.commitMessageCaret = caret - 1
+      this.setCommitMessageChars(chars)
+    }
+    return true
+  }
+
+  private handleCommitMessageDelete(data: string): boolean {
+    if (!matchesKey(data, "delete") && data !== "\x1b[3~") {
+      return false
+    }
+    const chars = this.commitMessageChars()
+    const caret = this.clampCommitMessageCaret(chars)
+    if (caret < chars.length) {
+      chars.splice(caret, 1)
+      this.setCommitMessageChars(chars)
+    }
     return true
   }
 
@@ -1600,7 +1663,12 @@ class DiffViewer {
     if (!isPrintableInput(data)) {
       return false
     }
-    this.commitMessage += data
+    const chars = this.commitMessageChars()
+    const input = [...data]
+    const caret = this.clampCommitMessageCaret(chars)
+    chars.splice(caret, 0, ...input)
+    this.commitMessageCaret = caret + input.length
+    this.setCommitMessageChars(chars)
     return true
   }
 
@@ -1612,6 +1680,7 @@ class DiffViewer {
     this.requestRender()
     try {
       this.commitMessage = await generateCommitMessage(this.pi, this.ctx)
+      this.commitMessageCaret = this.commitMessageLength()
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
     } finally {
@@ -1632,6 +1701,7 @@ class DiffViewer {
       this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
       this.resetSelectionToFirstTreeFile()
       this.commitMessage = ""
+      this.commitMessageCaret = 0
       this.commitDialogState = "closed"
       this.statusMessage = output
     } catch (error) {
@@ -1817,7 +1887,9 @@ class DiffViewer {
       case "commitDialog":
         return [
           { keys: "type", action: "Edit the commit message" },
-          { keys: "Backspace", action: "Delete the previous character" },
+          { keys: "←/→", action: "Move the commit message caret" },
+          { keys: "Home/End", action: "Jump the caret to the start or end" },
+          { keys: "Backspace/Delete", action: "Delete around the caret" },
           { keys: "*", action: "Generate a commit message from staged changes" },
           { keys: "Enter", action: "Commit staged changes with the message" },
           { keys: "Esc", action: "Cancel and close the commit dialog" },
@@ -1881,7 +1953,7 @@ class DiffViewer {
     return [
       this.commitPickerBorder("top", overlayWidth),
       row(` ${this.theme.fg("accent", this.theme.bold("Commit staged changes"))}`),
-      row(` ${this.theme.fg("dim", "type message • * generate • enter commit • ? help • esc cancel")}`),
+      row(` ${this.theme.fg("dim", "type message • ←/→ move • * generate • enter commit • ? help • esc cancel")}`),
       row(""),
       ...this.commitDialogBodyRows(row),
       row(""),
@@ -1893,8 +1965,16 @@ class DiffViewer {
     if (this.commitDialogState === "loading") {
       return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
     }
-    const message = this.commitMessage.length > 0 ? `${this.commitMessage}▌` : this.theme.fg("muted", "commit message")
-    return [row(` Message: ${message}`)]
+    return [row(` Message: ${this.renderCommitMessageInput()}`)]
+  }
+
+  private renderCommitMessageInput(): string {
+    const chars = this.commitMessageChars()
+    const caret = this.clampCommitMessageCaret(chars)
+    if (chars.length === 0) {
+      return `▌${this.theme.fg("muted", "commit message")}`
+    }
+    return `${chars.slice(0, caret).join("")}▌${chars.slice(caret).join("")}`
   }
 
   private renderCommandMenuOverlay(baseLines: string[], width: number): string[] {
