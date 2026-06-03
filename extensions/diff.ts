@@ -1,12 +1,19 @@
 import { stat } from "node:fs/promises"
 import { resolve } from "node:path"
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent"
+import {
+  createAgentSession,
+  type ExtensionAPI,
+  type ExtensionCommandContext,
+  SessionManager,
+  type Theme,
+} from "@earendil-works/pi-coding-agent"
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
 
 const MAX_VIEW_HEIGHT = 34
 const COMMIT_LIMIT = 200
 const GIT_TIMEOUT_MS = 10_000
 const MAX_UNTRACKED_FILE_BYTES = 256 * 1024
+const MAX_COMMIT_MESSAGE_DIFF_CHARS = 24_000
 
 type DiffMode = "working" | "commit"
 
@@ -29,6 +36,7 @@ interface DiffFile {
   oldPath?: string
   newPath?: string
   status: "added" | "deleted" | "modified" | "renamed" | "copied" | "binary"
+  staged: boolean
   lines: string[]
 }
 
@@ -294,6 +302,7 @@ function diffFileFromChunk(lines: string[]): DiffFile {
     oldPath: metadata.oldPath,
     newPath: metadata.newPath,
     status: statusFromLines(lines, metadata.oldPath, metadata.newPath),
+    staged: false,
     lines,
   }
 }
@@ -312,8 +321,9 @@ function buildDocument(
   subtitle: string,
   raw: string,
   commit?: CommitSummary,
+  stagedPaths = new Set<string>(),
 ): DiffDocument {
-  const files = parseDiff(raw)
+  const files = parseDiff(raw).map((file) => ({ ...file, staged: stagedPaths.has(file.path) }))
   return { mode, title, subtitle, raw, files, commit }
 }
 
@@ -340,6 +350,14 @@ async function listUntrackedFiles(pi: ExtensionAPI, cwd: string, signal?: AbortS
     return []
   }
   return result.stdout.split("\0").filter(Boolean)
+}
+
+async function listStagedFiles(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<Set<string>> {
+  const result = await git(pi, cwd, ["diff", "--cached", "--name-only", "-z"], signal)
+  if (result.code !== 0 || !result.stdout) {
+    return new Set()
+  }
+  return new Set(result.stdout.split("\0").filter(Boolean))
 }
 
 async function readUntrackedDiff(pi: ExtensionAPI, cwd: string, file: string, signal?: AbortSignal): Promise<string> {
@@ -405,11 +423,21 @@ async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionCommandContex
   }
 
   const headExists = await hasHead(pi, root, ctx.signal)
-  const diffResult = await git(pi, root, workingTreeDiffArgs(headExists), ctx.signal)
-  const untracked = await listUntrackedFiles(pi, root, ctx.signal)
+  const [diffResult, untracked, stagedFiles] = await Promise.all([
+    git(pi, root, workingTreeDiffArgs(headExists), ctx.signal),
+    listUntrackedFiles(pi, root, ctx.signal),
+    listStagedFiles(pi, root, ctx.signal),
+  ])
   const untrackedDiffs = await readUntrackedDiffs(pi, root, untracked, ctx.signal)
   const title = headExists ? "Working tree vs HEAD" : "Working tree (no commits yet)"
-  return buildDocument("working", title, root, joinDiffParts([diffResult.stdout, ...untrackedDiffs]))
+  return buildDocument(
+    "working",
+    title,
+    root,
+    joinDiffParts([diffResult.stdout, ...untrackedDiffs]),
+    undefined,
+    stagedFiles,
+  )
 }
 
 async function loadCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<CommitSummary[]> {
@@ -454,6 +482,20 @@ async function loadCommitDiff(
   return buildDocument("commit", `Commit ${commit.hash}`, commit.message, result.stdout, commit)
 }
 
+function compactGitOutput(result: GitExecResult): string {
+  return [result.stdout, result.stderr]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+}
+
+function assertGitSuccess(result: GitExecResult, args: string[]): void {
+  if (result.code !== 0) {
+    throw new Error(compactGitOutput(result) || `git ${args.join(" ")} failed`)
+  }
+}
+
 async function runGitCommand(
   pi: ExtensionAPI,
   cwd: string,
@@ -465,15 +507,189 @@ async function runGitCommand(
     throw new Error("Not a git repository")
   }
   const result = await git(pi, root, command.args, signal)
-  const output = [result.stdout, result.stderr]
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-  if (result.code !== 0) {
-    throw new Error(output || `git ${command.args.join(" ")} failed`)
-  }
+  assertGitSuccess(result, command.args)
+  const output = compactGitOutput(result)
   return output ? `${command.label} complete: ${output}` : `${command.label} complete`
+}
+
+async function hasStagedChanges(pi: ExtensionAPI, cwd: string, path: string, signal?: AbortSignal): Promise<boolean> {
+  const result = await git(pi, cwd, ["diff", "--cached", "--quiet", "--", path], signal)
+  if (result.code > 1) {
+    throw new Error(compactGitOutput(result) || `git diff --cached failed for ${path}`)
+  }
+  return result.code === 1
+}
+
+async function unstageFile(pi: ExtensionAPI, cwd: string, path: string, signal?: AbortSignal): Promise<void> {
+  const restoreArgs = ["restore", "--staged", "--", path]
+  const restoreResult = await git(pi, cwd, restoreArgs, signal)
+  if (restoreResult.code === 0) {
+    return
+  }
+  await unstageFileWithoutHead(pi, cwd, path, signal, restoreResult)
+}
+
+async function unstageFileWithoutHead(
+  pi: ExtensionAPI,
+  cwd: string,
+  path: string,
+  signal: AbortSignal | undefined,
+  restoreResult: GitExecResult,
+): Promise<void> {
+  const resetArgs = ["reset", "--", path]
+  const resetResult = await git(pi, cwd, resetArgs, signal)
+  if (resetResult.code === 0) {
+    return
+  }
+  const rmCachedArgs = ["rm", "--cached", "--", path]
+  const rmCachedResult = await git(pi, cwd, rmCachedArgs, signal)
+  if (rmCachedResult.code === 0) {
+    return
+  }
+  throw new Error(compactGitOutput(rmCachedResult) || compactGitOutput(resetResult) || compactGitOutput(restoreResult))
+}
+
+async function stageOrUnstageFile(pi: ExtensionAPI, cwd: string, path: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  if (await hasStagedChanges(pi, root, path, signal)) {
+    await unstageFile(pi, root, path, signal)
+    return `Unstaged ${path}`
+  }
+  const addArgs = ["add", "--", path]
+  assertGitSuccess(await git(pi, root, addArgs, signal), addArgs)
+  return `Staged ${path}`
+}
+
+async function runGitCommit(pi: ExtensionAPI, cwd: string, message: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  const args = ["commit", "-m", message]
+  const result = await git(pi, root, args, signal)
+  assertGitSuccess(result, args)
+  return compactGitOutput(result) || "Commit complete"
+}
+
+async function stagedDiffForCommitMessage(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  const statResult = await git(pi, root, ["diff", "--cached", "--stat", "--color=never"], signal)
+  const diffResult = await git(pi, root, [...BASE_DIFF_ARGS, "--cached", "--"], signal)
+  assertGitSuccess(statResult, ["diff", "--cached", "--stat", "--color=never"])
+  assertGitSuccess(diffResult, ["diff", "--cached", "--"])
+  const diff = [statResult.stdout.trim(), diffResult.stdout.trim()].filter(Boolean).join("\n\n")
+  if (!diff) {
+    throw new Error("No staged changes to summarize")
+  }
+  if (diff.length <= MAX_COMMIT_MESSAGE_DIFF_CHARS) {
+    return diff
+  }
+  return `${diff.slice(0, MAX_COMMIT_MESSAGE_DIFF_CHARS)}\n\n[diff truncated]`
+}
+
+function commitMessagePrompt(diff: string): string {
+  return `Generate one concise Conventional Commit message for these staged changes.\n\nRequirements:\n- Return only the commit message.\n- Use a single line.\n- Keep it under 72 characters if possible.\n- Use an appropriate type such as feat, fix, docs, refactor, test, chore.\n\nStaged diff:\n${diff}`
+}
+
+interface AssistantTextMessage {
+  role: "assistant"
+  content: Array<{ type: string; text?: string }>
+  stopReason?: string
+  errorMessage?: string
+}
+
+function isAssistantTextMessage(message: unknown): message is AssistantTextMessage {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    "role" in message &&
+    message.role === "assistant" &&
+    "content" in message &&
+    Array.isArray(message.content)
+  )
+}
+
+function textFromAssistantMessage(message: AssistantTextMessage): string {
+  return message.content
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text ?? "")
+    .join("\n")
+}
+
+function cleanGeneratedCommitMessage(text: string): string {
+  const firstLine = text
+    .trim()
+    .replace(/^```(?:text)?/i, "")
+    .replace(/```$/u, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean)
+  return (firstLine ?? "")
+    .replace(/^commit message:\s*/iu, "")
+    .replace(/^["'`]|["'`]$/gu, "")
+    .trim()
+}
+
+function createBackgroundSessionManager(ctx: ExtensionCommandContext): SessionManager {
+  const sessionFile = ctx.sessionManager.getSessionFile()
+  const leafId = ctx.sessionManager.getLeafId()
+  if (!sessionFile || !leafId) {
+    throw new Error("Cannot fork the active session for commit message generation")
+  }
+  const sourceSession = SessionManager.open(sessionFile, ctx.sessionManager.getSessionDir(), ctx.cwd)
+  const forkedSessionFile = sourceSession.createBranchedSession(leafId)
+  if (!forkedSessionFile) {
+    throw new Error("Could not create background session fork")
+  }
+  return SessionManager.open(forkedSessionFile, ctx.sessionManager.getSessionDir(), ctx.cwd)
+}
+
+function lastAssistantTextMessage(messages: unknown[]): AssistantTextMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (isAssistantTextMessage(message)) {
+      return message
+    }
+  }
+}
+
+async function generateCommitMessage(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<string> {
+  if (!ctx.model) {
+    throw new Error("No model selected")
+  }
+  const diff = await stagedDiffForCommitMessage(pi, ctx.cwd, ctx.signal)
+  const { session } = await createAgentSession({
+    cwd: ctx.cwd,
+    model: ctx.model,
+    thinkingLevel: pi.getThinkingLevel(),
+    modelRegistry: ctx.modelRegistry,
+    sessionManager: createBackgroundSessionManager(ctx),
+    noTools: "all",
+    tools: [],
+  })
+
+  try {
+    await session.prompt(commitMessagePrompt(diff), { expandPromptTemplates: false })
+    const response = lastAssistantTextMessage(session.messages)
+    if (!response) {
+      throw new Error("Background session did not return an assistant message")
+    }
+    const message = cleanGeneratedCommitMessage(textFromAssistantMessage(response))
+    if (!message) {
+      const contentTypes = response.content.map((part) => part.type).join(", ") || "none"
+      const reason = response.errorMessage ?? `stop reason: ${response.stopReason}; content: ${contentTypes}`
+      throw new Error(`Model returned an empty commit message (${reason})`)
+    }
+    return message
+  } finally {
+    session.dispose()
+  }
 }
 
 interface TreeRow {
@@ -499,11 +715,15 @@ function addDirectoryRows(rows: TreeRow[], seenDirs: Set<string>, dirs: string[]
   }
 }
 
+function stagedGlyph(file: DiffFile): string {
+  return file.staged ? "●" : " "
+}
+
 function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFile): void {
   const displayParts = info.file.path.split("/").filter(Boolean)
   addDirectoryRows(rows, seenDirs, displayParts.slice(0, -1))
   rows.push({
-    label: `${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
+    label: `${stagedGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
     fileIndex: info.index,
     depth: Math.max(0, displayParts.length - 1),
     isLast: true,
@@ -541,8 +761,10 @@ class DiffViewer {
   private commits: CommitSummary[] = []
   private commitSearchQuery = ""
   private commandMenuSearchQuery = ""
+  private commitMessage = ""
   private pickerState: "closed" | "loading" | "open" = "closed"
   private commandMenuState: "closed" | "loading" | "open" = "closed"
+  private commitDialogState: "closed" | "loading" | "open" = "closed"
   private loadingMessage: string | undefined
   private statusMessage: string | undefined
   private error: string | undefined
@@ -566,15 +788,7 @@ class DiffViewer {
   }
 
   handleInput(data: string): void {
-    if (this.commandMenuState !== "closed") {
-      this.handleCommandMenuInput(data)
-      return
-    }
-    if (this.pickerState !== "closed") {
-      this.handleCommitPickerInput(data)
-      return
-    }
-    if (this.handleCloseInput(data) || this.handleOpenPickerInput(data) || this.handleOpenCommandMenuInput(data)) {
+    if (this.handleActiveOverlayInput(data) || this.handleCloseInput(data) || this.handleOpenOverlayInput(data)) {
       return
     }
     this.handleViewerNavigationInput(data)
@@ -585,6 +799,22 @@ class DiffViewer {
     // The viewer renders from current git data only; there is no cached external state to invalidate.
   }
 
+  private handleActiveOverlayInput(data: string): boolean {
+    if (this.commitDialogState !== "closed") {
+      this.handleCommitDialogInput(data)
+      return true
+    }
+    if (this.commandMenuState !== "closed") {
+      this.handleCommandMenuInput(data)
+      return true
+    }
+    if (this.pickerState !== "closed") {
+      this.handleCommitPickerInput(data)
+      return true
+    }
+    return false
+  }
+
   private handleCloseInput(data: string): boolean {
     if (!this.isKey(data, "q") && !matchesKey(data, "escape")) {
       return false
@@ -593,11 +823,28 @@ class DiffViewer {
     return true
   }
 
+  private handleOpenOverlayInput(data: string): boolean {
+    const handlers = [
+      () => this.handleOpenCommitDialogInput(data),
+      () => this.handleOpenPickerInput(data),
+      () => this.handleOpenCommandMenuInput(data),
+    ]
+    return handlers.some((handler) => handler())
+  }
+
   private handleOpenPickerInput(data: string): boolean {
-    if (!this.isKey(data, "c")) {
+    if (data !== "c") {
       return false
     }
     this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    return true
+  }
+
+  private handleOpenCommitDialogInput(data: string): boolean {
+    if (data !== "C") {
+      return false
+    }
+    this.openCommitDialog()
     return true
   }
 
@@ -612,6 +859,7 @@ class DiffViewer {
   private handleViewerNavigationInput(data: string): void {
     const handlers = [
       () => this.handleFocusToggle(data),
+      () => this.handleFileStageToggle(data),
       () => this.handleFileStep(data),
       () => this.handleArrowScroll(data),
       () => this.handlePageScroll(data),
@@ -629,6 +877,23 @@ class DiffViewer {
       return false
     }
     this.focusedPanel = this.focusedPanel === "tree" ? "diff" : "tree"
+    return true
+  }
+
+  private handleFileStageToggle(data: string): boolean {
+    if (!isEnter(data) || this.focusedPanel !== "tree") {
+      return false
+    }
+    if (this.document.mode !== "working") {
+      this.error = "Staging is only available in the working tree"
+      this.statusMessage = undefined
+      return true
+    }
+    const file = this.document.files[this.selectedFileIndex]
+    if (!file) {
+      return true
+    }
+    this.toggleSelectedFileStage(file.path).catch((error: unknown) => this.showAsyncError(error))
     return true
   }
 
@@ -708,6 +973,7 @@ class DiffViewer {
     this.statusMessage = undefined
     this.pickerState = "closed"
     this.commandMenuState = "closed"
+    this.commitDialogState = "closed"
     this.loadingMessage = undefined
     this.requestRender()
   }
@@ -741,6 +1007,9 @@ class DiffViewer {
     lines.push(fit(this.theme.fg("border", `├${"─".repeat(innerWidth)}┤`), width))
     lines.push(frame(this.renderFooter(innerWidth)))
     lines.push(fit(this.theme.fg("border", `╰${"─".repeat(innerWidth)}╯`), width))
+    if (this.commitDialogState !== "closed") {
+      return this.renderCommitDialogOverlay(lines, width)
+    }
     if (this.commandMenuState !== "closed") {
       return this.renderCommandMenuOverlay(lines, width)
     }
@@ -791,10 +1060,11 @@ class DiffViewer {
     }
     const focusLabel = this.focusedPanel === "tree" ? "files" : "diff"
     const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code"
+    const enterAction = this.focusedPanel === "tree" ? " • Enter stage/unstage" : ""
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows} • PgUp/PgDn scroll • Home/End jump • c commits • ^P commands • q close`,
+        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • ^P commands • q close`,
       ),
       width,
     )
@@ -818,10 +1088,8 @@ class DiffViewer {
       const indent = "  ".repeat(row.depth)
       const icon = row.fileIndex === undefined ? "▸ " : "  "
       const raw = `${indent}${icon}${row.label}`
-      const colored =
-        row.fileIndex === undefined
-          ? this.theme.fg("muted", raw)
-          : this.colorTreeFile(raw, this.document.files[row.fileIndex]?.status ?? "modified", isSelected)
+      const file = row.fileIndex === undefined ? undefined : this.document.files[row.fileIndex]
+      const colored = file ? this.colorTreeFile(raw, file, isSelected) : this.theme.fg("muted", raw)
       return fit(isSelected && isTreeFocused ? this.theme.bg("selectedBg", colored) : colored, width)
     })
     while (lines.length < height) {
@@ -830,8 +1098,8 @@ class DiffViewer {
     return lines
   }
 
-  private colorTreeFile(line: string, status: DiffFile["status"], selected: boolean): string {
-    const color = selected ? "accent" : TREE_STATUS_COLORS[status]
+  private colorTreeFile(line: string, file: DiffFile, selected: boolean): string {
+    const color = selected || file.staged ? "accent" : TREE_STATUS_COLORS[file.status]
     return this.theme.fg(color, line)
   }
 
@@ -898,6 +1166,39 @@ class DiffViewer {
   private resetSelectionToFirstTreeFile(): void {
     this.selectedFileIndex = this.treeFileOrder()[0] ?? 0
     this.diffScroll = 0
+  }
+
+  private selectFileByPath(path: string): boolean {
+    const fileIndex = this.document.files.findIndex((file) => file.path === path)
+    if (fileIndex < 0) {
+      return false
+    }
+    this.selectedFileIndex = fileIndex
+    this.diffScroll = 0
+    return true
+  }
+
+  private async refreshWorkingTreePreservingFile(path: string): Promise<void> {
+    this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+    if (!this.selectFileByPath(path)) {
+      this.resetSelectionToFirstTreeFile()
+    }
+  }
+
+  private async toggleSelectedFileStage(path: string): Promise<void> {
+    this.error = undefined
+    this.statusMessage = `Updating ${path}…`
+    this.requestRender()
+    try {
+      const message = await stageOrUnstageFile(this.pi, this.ctx.cwd, path, this.ctx.signal)
+      await this.refreshWorkingTreePreservingFile(path)
+      this.statusMessage = message
+    } catch (error) {
+      this.statusMessage = undefined
+      this.error = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.requestRender()
+    }
   }
 
   private searchTokens(query: string): string[] {
@@ -1135,6 +1436,121 @@ class DiffViewer {
     }
   }
 
+  private openCommitDialog(): void {
+    this.error = undefined
+    this.statusMessage = undefined
+    this.commitDialogState = "open"
+    this.requestRender()
+  }
+
+  private handleCommitDialogInput(data: string): void {
+    if (this.commitDialogState === "loading" || this.closeCommitDialogOnEscape(data)) {
+      return
+    }
+    this.updateCommitDialogInput(data)
+    this.requestRender()
+  }
+
+  private closeCommitDialogOnEscape(data: string): boolean {
+    if (!matchesKey(data, "escape")) {
+      return false
+    }
+    this.commitDialogState = "closed"
+    this.requestRender()
+    return true
+  }
+
+  private updateCommitDialogInput(data: string): void {
+    const handlers = [
+      () => this.handleCommitMessageGeneration(data),
+      () => this.handleCommitMessageBackspace(data),
+      () => this.handleCommitSubmission(data),
+      () => this.handleCommitMessageText(data),
+    ]
+    for (const handler of handlers) {
+      if (handler()) {
+        return
+      }
+    }
+  }
+
+  private handleCommitMessageGeneration(data: string): boolean {
+    if (data !== "*") {
+      return false
+    }
+    this.generateCommitMessageIntoDialog().catch((error: unknown) => this.showAsyncError(error))
+    return true
+  }
+
+  private handleCommitMessageBackspace(data: string): boolean {
+    if (!this.isBackspace(data)) {
+      return false
+    }
+    this.commitMessage = [...this.commitMessage].slice(0, -1).join("")
+    return true
+  }
+
+  private handleCommitSubmission(data: string): boolean {
+    if (!isEnter(data)) {
+      return false
+    }
+    const message = this.commitMessage.trim()
+    if (!message) {
+      this.error = "Commit message is empty"
+      this.statusMessage = undefined
+      return true
+    }
+    this.commitStagedChanges(message).catch((error: unknown) => this.showAsyncError(error))
+    return true
+  }
+
+  private handleCommitMessageText(data: string): boolean {
+    if (!isPrintableInput(data)) {
+      return false
+    }
+    this.commitMessage += data
+    return true
+  }
+
+  private async generateCommitMessageIntoDialog(): Promise<void> {
+    this.commitDialogState = "loading"
+    this.loadingMessage = "Generating commit message…"
+    this.error = undefined
+    this.statusMessage = undefined
+    this.requestRender()
+    try {
+      this.commitMessage = await generateCommitMessage(this.pi, this.ctx)
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.commitDialogState = "open"
+      this.loadingMessage = undefined
+      this.requestRender()
+    }
+  }
+
+  private async commitStagedChanges(message: string): Promise<void> {
+    this.commitDialogState = "loading"
+    this.loadingMessage = "Committing staged changes…"
+    this.error = undefined
+    this.statusMessage = undefined
+    this.requestRender()
+    try {
+      const output = await runGitCommit(this.pi, this.ctx.cwd, message, this.ctx.signal)
+      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.resetSelectionToFirstTreeFile()
+      this.commitMessage = ""
+      this.commitDialogState = "closed"
+      this.statusMessage = output
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error)
+      this.commitDialogState = "open"
+    } finally {
+      this.loadingMessage = undefined
+      this.requestRender()
+    }
+  }
+
   private openCommandMenu(): void {
     this.error = undefined
     this.statusMessage = undefined
@@ -1269,6 +1685,33 @@ class DiffViewer {
     }
     this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
     this.resetSelectionToFirstTreeFile()
+  }
+
+  private renderCommitDialogOverlay(baseLines: string[], width: number): string[] {
+    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
+    const overlay = this.commitDialogOverlayLines(layout.overlayWidth)
+    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+  }
+
+  private commitDialogOverlayLines(overlayWidth: number): string[] {
+    const row = (content: string) => this.commitPickerOverlayRow(content, overlayWidth)
+    return [
+      this.commitPickerBorder("top", overlayWidth),
+      row(` ${this.theme.fg("accent", this.theme.bold("Commit staged changes"))}`),
+      row(` ${this.theme.fg("dim", "type message • * generate • enter commit • esc cancel")}`),
+      row(""),
+      ...this.commitDialogBodyRows(row),
+      row(""),
+      this.commitPickerBorder("bottom", overlayWidth),
+    ]
+  }
+
+  private commitDialogBodyRows(row: (content: string) => string): string[] {
+    if (this.commitDialogState === "loading") {
+      return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
+    }
+    const message = this.commitMessage.length > 0 ? `${this.commitMessage}▌` : this.theme.fg("muted", "commit message")
+    return [row(` Message: ${message}`)]
   }
 
   private renderCommandMenuOverlay(baseLines: string[], width: number): string[] {
