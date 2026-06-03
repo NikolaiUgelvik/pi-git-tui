@@ -32,7 +32,7 @@ Opens a two-panel TUI:
 
 The command menu includes `Fetch`, `Pull`, `Pull (Rebase)`, `Push`, and `Force Push`.
 
-Staged files are marked with `●` in the file tree.
+Staged files are marked with `●` in the file tree. The header shows the repository path and current branch.
 
 By default `/diff` opens the current working tree diff against `HEAD`, including staged and unstaged changes. Untracked text files are appended to the working-tree view.
 

@@ -344,6 +344,29 @@ async function hasHead(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Pro
   return result.code === 0
 }
 
+async function currentBranchLabel(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string | undefined> {
+  const branchResult = await git(pi, cwd, ["branch", "--show-current"], signal)
+  const branch = branchResult.stdout.trim()
+  if (branchResult.code === 0 && branch) {
+    return branch
+  }
+
+  const headResult = await git(pi, cwd, ["rev-parse", "--short", "HEAD"], signal)
+  const head = headResult.stdout.trim()
+  if (headResult.code === 0 && head) {
+    return `detached ${head}`
+  }
+}
+
+function repositoryLabel(root: string, branch: string | undefined): string {
+  return branch ? `${root} (${branch})` : root
+}
+
+function commitSubtitle(root: string, branch: string | undefined, message: string): string {
+  const repo = repositoryLabel(root, branch)
+  return message ? `${repo} • ${message}` : repo
+}
+
 async function listUntrackedFiles(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string[]> {
   const result = await git(pi, cwd, ["ls-files", "--others", "--exclude-standard", "-z"], signal)
   if (result.code !== 0 || !result.stdout) {
@@ -422,7 +445,10 @@ async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionCommandContex
     return emptyDocument("Not a git repository", ctx.cwd, "working")
   }
 
-  const headExists = await hasHead(pi, root, ctx.signal)
+  const [headExists, branch] = await Promise.all([
+    hasHead(pi, root, ctx.signal),
+    currentBranchLabel(pi, root, ctx.signal),
+  ])
   const [diffResult, untracked, stagedFiles] = await Promise.all([
     git(pi, root, workingTreeDiffArgs(headExists), ctx.signal),
     listUntrackedFiles(pi, root, ctx.signal),
@@ -433,7 +459,7 @@ async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionCommandContex
   return buildDocument(
     "working",
     title,
-    root,
+    repositoryLabel(root, branch),
     joinDiffParts([diffResult.stdout, ...untrackedDiffs]),
     undefined,
     stagedFiles,
@@ -462,24 +488,33 @@ async function loadCommitDiff(
   signal?: AbortSignal,
 ): Promise<DiffDocument> {
   const root = (await ensureGitRepository(pi, cwd, signal)) ?? cwd
-  const result = await git(
-    pi,
-    root,
-    [
-      "-c",
-      "core.quotepath=false",
-      "show",
-      "--format=",
-      "--no-ext-diff",
-      "--find-renames",
-      "--find-copies",
-      "--color=never",
-      commit.hash,
-      "--",
-    ],
-    signal,
+  const [result, branch] = await Promise.all([
+    git(
+      pi,
+      root,
+      [
+        "-c",
+        "core.quotepath=false",
+        "show",
+        "--format=",
+        "--no-ext-diff",
+        "--find-renames",
+        "--find-copies",
+        "--color=never",
+        commit.hash,
+        "--",
+      ],
+      signal,
+    ),
+    currentBranchLabel(pi, root, signal),
+  ])
+  return buildDocument(
+    "commit",
+    `Commit ${commit.hash}`,
+    commitSubtitle(root, branch, commit.message),
+    result.stdout,
+    commit,
   )
-  return buildDocument("commit", `Commit ${commit.hash}`, commit.message, result.stdout, commit)
 }
 
 function compactGitOutput(result: GitExecResult): string {
