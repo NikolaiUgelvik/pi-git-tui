@@ -15,6 +15,10 @@ type CommitSummary = {
 	message: string;
 };
 
+type CommitPickerItem =
+	| { type: "working" }
+	| { type: "commit"; commit: CommitSummary };
+
 type DiffFile = {
 	path: string;
 	oldPath?: string;
@@ -349,6 +353,10 @@ class DiffViewer {
 
 		if (matchesKey(data, "tab")) {
 			this.focusedPanel = this.focusedPanel === "tree" ? "diff" : "tree";
+		} else if (data === "n" || data === "N") {
+			this.moveFile(1);
+		} else if (data === "p" || data === "P") {
+			this.moveFile(-1);
 		} else if (matchesKey(data, "up") || data === "k" || data === "K") {
 			if (this.focusedPanel === "tree") this.moveFile(-1);
 			else this.scrollDiff(-1);
@@ -441,7 +449,7 @@ class DiffViewer {
 		const focusLabel = this.focusedPanel === "tree" ? "files" : "diff";
 		const arrows = this.focusedPanel === "tree" ? "↑↓/j/k files" : "↑↓/j/k code";
 		return fit(
-			this.theme.fg("dim", `tab focus:${focusLabel} • ${arrows} • PgUp/PgDn scroll • Home/End jump • c commits • q close`),
+			this.theme.fg("dim", `focus:${focusLabel} • tab switch • n/p files • ${arrows} • PgUp/PgDn scroll • Home/End jump • c commits • q close`),
 			width,
 		);
 	}
@@ -561,7 +569,6 @@ class DiffViewer {
 			this.selectedCommitIndex = 0;
 			this.commitScroll = 0;
 			this.pickerState = "open";
-			if (this.commits.length === 0) this.error = "No commits found.";
 		} catch (error) {
 			this.pickerState = "closed";
 			this.error = error instanceof Error ? error.message : String(error);
@@ -582,19 +589,49 @@ class DiffViewer {
 			return;
 		}
 		if (this.pickerState === "loading") return;
+		const itemCount = this.commitPickerItemCount();
 		if (matchesKey(data, "up") || data === "k" || data === "K") {
 			this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 1);
 		} else if (matchesKey(data, "down") || data === "j" || data === "J") {
-			this.selectedCommitIndex = Math.min(this.commits.length - 1, this.selectedCommitIndex + 1);
+			this.selectedCommitIndex = Math.min(itemCount - 1, this.selectedCommitIndex + 1);
 		} else if (isPageUp(data)) {
 			this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 10);
 		} else if (isPageDown(data)) {
-			this.selectedCommitIndex = Math.min(this.commits.length - 1, this.selectedCommitIndex + 10);
+			this.selectedCommitIndex = Math.min(itemCount - 1, this.selectedCommitIndex + 10);
 		} else if (isEnter(data)) {
-			const commit = this.commits[this.selectedCommitIndex];
-			if (commit) void this.selectCommit(commit);
+			const item = this.commitPickerItem(this.selectedCommitIndex);
+			if (item?.type === "working") void this.selectWorkingTree();
+			else if (item?.type === "commit") void this.selectCommit(item.commit);
 		}
 		this.requestRender();
+	}
+
+	private commitPickerItemCount(): number {
+		return this.commits.length + 1;
+	}
+
+	private commitPickerItem(index: number): CommitPickerItem | undefined {
+		if (index === 0) return { type: "working" };
+		const commit = this.commits[index - 1];
+		return commit ? { type: "commit", commit } : undefined;
+	}
+
+	private async selectWorkingTree(): Promise<void> {
+		this.pickerState = "loading";
+		this.loadingMessage = "Loading working tree…";
+		this.requestRender();
+		try {
+			this.document = await loadWorkingTreeDiff(this.pi, this.ctx);
+			this.selectedFileIndex = 0;
+			this.diffScroll = 0;
+			this.error = undefined;
+		} catch (error) {
+			this.error = error instanceof Error ? error.message : String(error);
+		} finally {
+			this.pickerState = "closed";
+			this.loadingMessage = undefined;
+			this.requestRender();
+		}
 	}
 
 	private async selectCommit(commit: CommitSummary): Promise<void> {
@@ -635,10 +672,9 @@ class DiffViewer {
 
 		if (this.pickerState === "loading") {
 			overlay.push(row(` ${this.theme.fg("warning", this.loadingMessage ?? "Loading…")}`));
-		} else if (this.commits.length === 0) {
-			overlay.push(row(` ${this.theme.fg("muted", "No commits found")}`));
 		} else {
-			const maxScroll = Math.max(0, this.commits.length - maxItems);
+			const itemCount = this.commitPickerItemCount();
+			const maxScroll = Math.max(0, itemCount - maxItems);
 			this.commitScroll = Math.max(
 				0,
 				Math.min(this.commitScroll, maxScroll, Math.max(0, this.selectedCommitIndex - Math.floor(maxItems / 2))),
@@ -646,10 +682,13 @@ class DiffViewer {
 			if (this.selectedCommitIndex < this.commitScroll) this.commitScroll = this.selectedCommitIndex;
 			if (this.selectedCommitIndex >= this.commitScroll + maxItems) this.commitScroll = this.selectedCommitIndex - maxItems + 1;
 
-			for (let i = this.commitScroll; i < Math.min(this.commits.length, this.commitScroll + maxItems); i++) {
-				const commit = this.commits[i]!;
+			for (let i = this.commitScroll; i < Math.min(itemCount, this.commitScroll + maxItems); i++) {
+				const item = this.commitPickerItem(i);
+				if (!item) continue;
 				const selected = i === this.selectedCommitIndex;
-				const line = ` ${selected ? "▶" : " "} ${this.theme.fg("accent", commit.hash)} ${commit.message}`;
+				const line = item.type === "working"
+					? ` ${selected ? "▶" : " "} ${this.theme.fg("accent", "working tree")} ${this.theme.fg("muted", "staged + unstaged")}`
+					: ` ${selected ? "▶" : " "} ${this.theme.fg("accent", item.commit.hash)} ${item.commit.message}`;
 				overlay.push(row(selected ? this.theme.bg("selectedBg", line) : line));
 			}
 		}

@@ -17,9 +17,10 @@ Opens a two-panel TUI:
 
 - `Tab`: switch focus between the file tree and diff/code panel
 - `↑` / `↓` or `k` / `j`: move in the focused panel (files or code)
+- `n` / `p`: switch to the next/previous file from any focused panel
 - `PageUp` / `PageDown`: scroll the diff
 - `Home` / `End`: jump within the focused panel
-- `c`: choose a commit from recent history and view that commit's diff
+- `c`: choose the working tree or a recent commit and view that diff
 - `Esc`: close the commit picker and return to the diff view
 - `q`: close the viewer
 
