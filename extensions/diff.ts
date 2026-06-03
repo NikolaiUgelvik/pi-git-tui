@@ -57,6 +57,14 @@ function isPageDown(data: string): boolean {
 	return matchesKey(data, "pageDown") || data === "\x1b[6~";
 }
 
+function isPrintableInput(data: string): boolean {
+	if (data.length === 0 || data.includes("\x1b")) return false;
+	return [...data].every((char) => {
+		const codePoint = char.codePointAt(0);
+		return codePoint !== undefined && codePoint >= 32 && codePoint !== 127;
+	});
+}
+
 function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
@@ -313,6 +321,7 @@ class DiffViewer {
 	private selectedCommitIndex = 0;
 	private focusedPanel: FocusPanel = "tree";
 	private commits: CommitSummary[] = [];
+	private commitSearchQuery = "";
 	private pickerState: "closed" | "loading" | "open" = "closed";
 	private loadingMessage: string | undefined;
 	private error: string | undefined;
@@ -561,13 +570,14 @@ class DiffViewer {
 
 	private async openCommitPicker(): Promise<void> {
 		this.error = undefined;
+		this.commitSearchQuery = "";
+		this.selectedCommitIndex = 0;
+		this.commitScroll = 0;
 		this.pickerState = "loading";
 		this.loadingMessage = "Loading commits…";
 		this.requestRender();
 		try {
 			this.commits = await loadCommits(this.pi, this.ctx.cwd, this.ctx.signal);
-			this.selectedCommitIndex = 0;
-			this.commitScroll = 0;
 			this.pickerState = "open";
 		} catch (error) {
 			this.pickerState = "closed";
@@ -579,41 +589,77 @@ class DiffViewer {
 	}
 
 	private handleCommitPickerInput(data: string): void {
-		if (data === "q" || data === "Q") {
-			this.done();
-			return;
-		}
-		if (matchesKey(data, "escape") || data === "c" || data === "C") {
+		if (matchesKey(data, "escape")) {
 			this.pickerState = "closed";
 			this.requestRender();
 			return;
 		}
 		if (this.pickerState === "loading") return;
-		const itemCount = this.commitPickerItemCount();
-		if (matchesKey(data, "up") || data === "k" || data === "K") {
-			this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 1);
-		} else if (matchesKey(data, "down") || data === "j" || data === "J") {
-			this.selectedCommitIndex = Math.min(itemCount - 1, this.selectedCommitIndex + 1);
-		} else if (isPageUp(data)) {
-			this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 10);
-		} else if (isPageDown(data)) {
-			this.selectedCommitIndex = Math.min(itemCount - 1, this.selectedCommitIndex + 10);
-		} else if (isEnter(data)) {
-			const item = this.commitPickerItem(this.selectedCommitIndex);
-			if (item?.type === "working") void this.selectWorkingTree();
-			else if (item?.type === "commit") void this.selectCommit(item.commit);
+
+		if (matchesKey(data, "backspace") || data === "\b" || data === "\x7f") {
+			if (this.commitSearchQuery.length > 0) {
+				this.commitSearchQuery = [...this.commitSearchQuery].slice(0, -1).join("");
+				this.resetCommitPickerScroll();
+			}
+		} else if (isPrintableInput(data)) {
+			this.commitSearchQuery += data;
+			this.resetCommitPickerScroll();
+		} else {
+			const itemCount = this.commitPickerItemCount();
+			if (matchesKey(data, "up")) {
+				this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 1);
+			} else if (matchesKey(data, "down")) {
+				this.selectedCommitIndex = Math.min(Math.max(0, itemCount - 1), this.selectedCommitIndex + 1);
+			} else if (isPageUp(data)) {
+				this.selectedCommitIndex = Math.max(0, this.selectedCommitIndex - 10);
+			} else if (isPageDown(data)) {
+				this.selectedCommitIndex = Math.min(Math.max(0, itemCount - 1), this.selectedCommitIndex + 10);
+			} else if (matchesKey(data, "home")) {
+				this.selectedCommitIndex = 0;
+			} else if (matchesKey(data, "end")) {
+				this.selectedCommitIndex = Math.max(0, itemCount - 1);
+			} else if (isEnter(data)) {
+				const item = this.commitPickerItem(this.selectedCommitIndex);
+				if (item?.type === "working") void this.selectWorkingTree();
+				else if (item?.type === "commit") void this.selectCommit(item.commit);
+			}
 		}
+		this.clampCommitSelection();
 		this.requestRender();
 	}
 
+	private resetCommitPickerScroll(): void {
+		this.selectedCommitIndex = 0;
+		this.commitScroll = 0;
+	}
+
+	private clampCommitSelection(): void {
+		this.selectedCommitIndex = Math.max(0, Math.min(Math.max(0, this.commitPickerItemCount() - 1), this.selectedCommitIndex));
+	}
+
 	private commitPickerItemCount(): number {
-		return this.commits.length + 1;
+		return this.commitPickerItems().length;
 	}
 
 	private commitPickerItem(index: number): CommitPickerItem | undefined {
-		if (index === 0) return { type: "working" };
-		const commit = this.commits[index - 1];
-		return commit ? { type: "commit", commit } : undefined;
+		return this.commitPickerItems()[index];
+	}
+
+	private commitPickerItems(): CommitPickerItem[] {
+		const workingItem: CommitPickerItem = { type: "working" };
+		const commitItems = this.commits.map((commit): CommitPickerItem => ({ type: "commit", commit }));
+		const tokens = this.commitSearchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+		if (tokens.length === 0) return [workingItem, ...commitItems];
+
+		const items: CommitPickerItem[] = [];
+		if (this.matchesCommitSearch("working tree staged unstaged", tokens)) items.push(workingItem);
+		items.push(...commitItems.filter((item) => item.type === "commit" && this.matchesCommitSearch(`${item.commit.hash} ${item.commit.message}`, tokens)));
+		return items;
+	}
+
+	private matchesCommitSearch(value: string, tokens: string[]): boolean {
+		const haystack = value.toLowerCase();
+		return tokens.every((token) => haystack.includes(token));
 	}
 
 	private async selectWorkingTree(): Promise<void> {
@@ -632,6 +678,15 @@ class DiffViewer {
 			this.loadingMessage = undefined;
 			this.requestRender();
 		}
+	}
+
+	private renderCommitSearchLine(): string {
+		const query = this.commitSearchQuery.length > 0
+			? `${this.commitSearchQuery}▌`
+			: this.theme.fg("muted", "type to filter commits");
+		const matchCount = this.commitPickerItems().filter((item) => item.type === "commit").length;
+		const countLabel = this.commitSearchQuery.trim().length > 0 ? ` ${this.theme.fg("muted", `(${matchCount}/${this.commits.length})`)}` : "";
+		return ` Search: ${query}${countLabel}`;
 	}
 
 	private async selectCommit(commit: CommitSummary): Promise<void> {
@@ -656,7 +711,7 @@ class DiffViewer {
 		const overlayWidth = Math.max(50, Math.min(width - 4, 88));
 		const leftPad = Math.max(0, Math.floor((width - overlayWidth) / 2));
 		const startLine = 5;
-		const maxItems = Math.max(1, Math.min(14, baseLines.length - startLine - 6));
+		const maxItems = Math.max(1, Math.min(13, baseLines.length - startLine - 7));
 		const overlay: string[] = [];
 		const border = this.theme.fg("border", `╭${"─".repeat(overlayWidth - 2)}╮`);
 		const bottom = this.theme.fg("border", `╰${"─".repeat(overlayWidth - 2)}╯`);
@@ -667,29 +722,35 @@ class DiffViewer {
 
 		overlay.push(border);
 		overlay.push(row(` ${this.theme.fg("accent", this.theme.bold("Select commit"))}`));
-		overlay.push(row(` ${this.theme.fg("dim", "↑↓ navigate • enter select • esc cancel • q close")}`));
+		overlay.push(row(` ${this.theme.fg("dim", "type search • backspace edit • ↑↓ navigate • enter select • esc cancel")}`));
+		overlay.push(row(this.renderCommitSearchLine()));
 		overlay.push(row(""));
 
 		if (this.pickerState === "loading") {
 			overlay.push(row(` ${this.theme.fg("warning", this.loadingMessage ?? "Loading…")}`));
 		} else {
+			this.clampCommitSelection();
 			const itemCount = this.commitPickerItemCount();
-			const maxScroll = Math.max(0, itemCount - maxItems);
-			this.commitScroll = Math.max(
-				0,
-				Math.min(this.commitScroll, maxScroll, Math.max(0, this.selectedCommitIndex - Math.floor(maxItems / 2))),
-			);
-			if (this.selectedCommitIndex < this.commitScroll) this.commitScroll = this.selectedCommitIndex;
-			if (this.selectedCommitIndex >= this.commitScroll + maxItems) this.commitScroll = this.selectedCommitIndex - maxItems + 1;
+			if (itemCount === 0) {
+				overlay.push(row(` ${this.theme.fg("muted", "No matching commits")}`));
+			} else {
+				const maxScroll = Math.max(0, itemCount - maxItems);
+				this.commitScroll = Math.max(
+					0,
+					Math.min(this.commitScroll, maxScroll, Math.max(0, this.selectedCommitIndex - Math.floor(maxItems / 2))),
+				);
+				if (this.selectedCommitIndex < this.commitScroll) this.commitScroll = this.selectedCommitIndex;
+				if (this.selectedCommitIndex >= this.commitScroll + maxItems) this.commitScroll = this.selectedCommitIndex - maxItems + 1;
 
-			for (let i = this.commitScroll; i < Math.min(itemCount, this.commitScroll + maxItems); i++) {
-				const item = this.commitPickerItem(i);
-				if (!item) continue;
-				const selected = i === this.selectedCommitIndex;
-				const line = item.type === "working"
-					? ` ${selected ? "▶" : " "} ${this.theme.fg("accent", "working tree")} ${this.theme.fg("muted", "staged + unstaged")}`
-					: ` ${selected ? "▶" : " "} ${this.theme.fg("accent", item.commit.hash)} ${item.commit.message}`;
-				overlay.push(row(selected ? this.theme.bg("selectedBg", line) : line));
+				for (let i = this.commitScroll; i < Math.min(itemCount, this.commitScroll + maxItems); i++) {
+					const item = this.commitPickerItem(i);
+					if (!item) continue;
+					const selected = i === this.selectedCommitIndex;
+					const line = item.type === "working"
+						? ` ${selected ? "▶" : " "} ${this.theme.fg("accent", "working tree")} ${this.theme.fg("muted", "staged + unstaged")}`
+						: ` ${selected ? "▶" : " "} ${this.theme.fg("accent", item.commit.hash)} ${item.commit.message}`;
+					overlay.push(row(selected ? this.theme.bg("selectedBg", line) : line));
+				}
 			}
 		}
 

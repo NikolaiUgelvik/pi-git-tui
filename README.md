@@ -21,6 +21,7 @@ Opens a two-panel TUI:
 - `PageUp` / `PageDown`: scroll the diff
 - `Home` / `End`: jump within the focused panel
 - `c`: choose the working tree or a recent commit and view that diff
+- Type in the commit picker to search/filter commits; use `Backspace` to edit
 - `Esc`: close the commit picker and return to the diff view
 - `q`: close the viewer
 
