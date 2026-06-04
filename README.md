@@ -1,3 +1,5 @@
+<p align="center"><img width="827" height="318" alt="image" src="https://github.com/user-attachments/assets/56377402-03c7-4af6-a543-73a45f39e8c6" /></p>
+
 # pi-git
 
 A Pi package that adds an interactive git diff viewer command.
