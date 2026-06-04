@@ -1,6 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent"
 
-export const MAX_VIEW_HEIGHT = 34
 export const COMMIT_LIMIT = 200
 export const GIT_TIMEOUT_MS = 10_000
 export const MAX_UNTRACKED_FILE_BYTES = 256 * 1024

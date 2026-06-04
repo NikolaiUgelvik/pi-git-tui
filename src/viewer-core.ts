@@ -3,7 +3,7 @@ import { matchesKey } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
 import { fit } from "./render-text.js"
 import { buildTreeRows } from "./tree.js"
-import { type CommitSummary, type DiffDocument, type FocusPanel, type HelpContext, MAX_VIEW_HEIGHT } from "./types.js"
+import type { CommitSummary, DiffDocument, FocusPanel, HelpContext } from "./types.js"
 
 export class DiffViewerCore {
   protected document: DiffDocument
@@ -331,7 +331,7 @@ export class DiffViewerCore {
     // into scrollback when users browse with arrow keys or PageUp/PageDown.
     const maxTotalLines = Math.max(10, this.getTerminalRows() - 2)
     const chromeLines = 7 // border, header, subtitle, dividers, footer, border
-    return Math.max(5, Math.min(MAX_VIEW_HEIGHT, maxTotalLines - chromeLines))
+    return Math.max(5, maxTotalLines - chromeLines)
   }
 
   protected pageScrollSize(): number {
