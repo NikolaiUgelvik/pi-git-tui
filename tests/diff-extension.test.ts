@@ -1,8 +1,16 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { test } from "node:test"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import type { KeyId } from "@earendil-works/pi-tui"
 import gitDiffExtension, { getDiffShortcut } from "../extensions/diff.js"
+
+test("extension source avoids deep pi-tui imports unsupported by Pi loader aliases", () => {
+  const overlaySource = readFileSync(join(process.cwd(), "src/viewer-overlay-base.ts"), "utf8")
+
+  assert.doesNotMatch(overlaySource, /@earendil-works\/pi-tui\//)
+})
 
 test("exports a Pi extension factory", () => {
   const extensionFactory: unknown = gitDiffExtension

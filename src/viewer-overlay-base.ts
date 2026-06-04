@@ -1,6 +1,6 @@
 import { truncateToWidth } from "@earendil-works/pi-tui"
-import { extractSegments } from "@earendil-works/pi-tui/dist/utils.js"
 
+import { sliceStyledColumns } from "./ansi-segments.js"
 import { fit } from "./render-text.js"
 import { DiffViewerFrame } from "./viewer-frame.js"
 
@@ -54,8 +54,8 @@ export class DiffViewerOverlayBase extends DiffViewerFrame {
     const prefix = truncateToWidth(base, layout.leftPad, "", true)
     const suffixStart = layout.leftPad + layout.overlayWidth
     const suffixLength = Math.max(0, width - suffixStart)
-    const { after } = extractSegments(base, layout.leftPad, suffixStart, suffixLength)
-    return fit(prefix + overlayLine + this.closeAnsiSegment(after), width)
+    const suffix = sliceStyledColumns(base, suffixStart, suffixLength)
+    return fit(prefix + overlayLine + this.closeAnsiSegment(suffix), width)
   }
 
   private closeAnsiSegment(segment: string): string {
