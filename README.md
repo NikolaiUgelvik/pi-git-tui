@@ -10,6 +10,11 @@ Review your changes, stage files, browse recent commits, run common git commands
 /diff
 ```
 
+## Keyboard shortcut
+
+- macOS: <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
+- Other platforms: <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
+
 ## Installation
 
 Install from GitHub:

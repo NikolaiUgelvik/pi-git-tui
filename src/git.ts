@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import {
   createAgentSession,
   type ExtensionAPI,
-  type ExtensionCommandContext,
+  type ExtensionContext,
   SessionManager,
 } from "@earendil-works/pi-coding-agent"
 import { buildDocument, emptyDocument } from "./diff-parser.js"
@@ -131,7 +131,7 @@ function joinDiffParts(parts: string[]): string {
   return parts.filter((part) => part.length > 0).join("\n")
 }
 
-export async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<DiffDocument> {
+export async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionContext): Promise<DiffDocument> {
   const root = await ensureGitRepository(pi, ctx.cwd, ctx.signal)
   if (!root) {
     return emptyDocument("Not a git repository", ctx.cwd, "working", undefined, "missing")
@@ -418,7 +418,7 @@ function cleanGeneratedCommitMessage(text: string): string {
     .trim()
 }
 
-function createBackgroundSessionManager(ctx: ExtensionCommandContext): SessionManager {
+function createBackgroundSessionManager(ctx: ExtensionContext): SessionManager {
   const sessionFile = ctx.sessionManager.getSessionFile()
   const leafId = ctx.sessionManager.getLeafId()
   if (!sessionFile || !leafId) {
@@ -441,7 +441,7 @@ function lastAssistantTextMessage(messages: unknown[]): AssistantTextMessage | u
   }
 }
 
-export async function generateCommitMessage(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<string> {
+export async function generateCommitMessage(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
   if (!ctx.model) {
     throw new Error("No model selected")
   }

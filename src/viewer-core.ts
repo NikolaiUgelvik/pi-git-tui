@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { matchesKey } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
 import { fit } from "./render-text.js"
@@ -8,7 +8,7 @@ import { type CommitSummary, type DiffDocument, type FocusPanel, type HelpContex
 export class DiffViewerCore {
   protected document: DiffDocument
   protected readonly pi: ExtensionAPI
-  protected readonly ctx: ExtensionCommandContext
+  protected readonly ctx: ExtensionContext
   protected readonly theme: Theme
   protected readonly done: () => void
   protected readonly requestRender: () => void
@@ -36,7 +36,7 @@ export class DiffViewerCore {
 
   constructor(
     pi: ExtensionAPI,
-    ctx: ExtensionCommandContext,
+    ctx: ExtensionContext,
     theme: Theme,
     document: DiffDocument,
     done: () => void,

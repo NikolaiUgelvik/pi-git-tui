@@ -23,7 +23,8 @@
   "scripts": {
     "format": "biome check --write .",
     "lint": "biome check .",
-    "check": "biome ci . && npm run typecheck && npm run fallow",
+    "check": "biome ci . && npm run typecheck && npm test && npm run fallow",
+    "test": "sh -c 'rm -rf .tmp-tests && tsc --noEmit false --outDir .tmp-tests --rootDir . && node --test .tmp-tests/tests/*.test.js; status=$?; rm -rf .tmp-tests; exit $status'",
     "fallow": "fallow --ci --fail-on-issues",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
