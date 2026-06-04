@@ -15,7 +15,7 @@ Review your changes, stage files, browse recent commits, run common git commands
 Install from GitHub:
 
 ```bash
-pi install git:github.com/NikolaiUgelvik/py-git
+pi install git:github.com/NikolaiUgelvik/pi-git
 ```
 
 For local development, load the extension directly:
