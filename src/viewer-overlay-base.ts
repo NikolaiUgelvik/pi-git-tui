@@ -1,4 +1,7 @@
-import { fit, stripAnsi } from "./render-text.js"
+import { truncateToWidth } from "@earendil-works/pi-tui"
+import { extractSegments } from "@earendil-works/pi-tui/dist/utils.js"
+
+import { fit } from "./render-text.js"
 import { DiffViewerFrame } from "./viewer-frame.js"
 
 export class DiffViewerOverlayBase extends DiffViewerFrame {
@@ -47,10 +50,18 @@ export class DiffViewerOverlayBase extends DiffViewerFrame {
     layout: { overlayWidth: number; leftPad: number },
     width: number,
   ): string {
-    const base = stripAnsi(baseLine ?? "")
-    const prefix = base.slice(0, layout.leftPad).padEnd(layout.leftPad, " ")
+    const base = baseLine ?? ""
+    const prefix = truncateToWidth(base, layout.leftPad, "", true)
     const suffixStart = layout.leftPad + layout.overlayWidth
-    const suffix = suffixStart < base.length ? base.slice(suffixStart) : ""
-    return fit(prefix + overlayLine + suffix, width)
+    const suffixLength = Math.max(0, width - suffixStart)
+    const { after } = extractSegments(base, layout.leftPad, suffixStart, suffixLength)
+    return fit(prefix + overlayLine + this.closeAnsiSegment(after), width)
+  }
+
+  private closeAnsiSegment(segment: string): string {
+    if (!segment.includes("\x1b") || segment.endsWith("\x1b[0m")) {
+      return segment
+    }
+    return `${segment}\x1b[0m`
   }
 }
