@@ -13,6 +13,14 @@ export interface StashSummary {
   message: string
 }
 
+export interface WorktreeSummary {
+  path: string
+  head?: string
+  branch?: string
+  detached?: boolean
+  bare?: boolean
+}
+
 async function git(pi: ExtensionAPI, cwd: string, args: string[], signal?: AbortSignal): Promise<GitExecResult> {
   return pi.exec("git", args, { cwd, signal, timeout: GIT_TIMEOUT_MS })
 }
@@ -162,6 +170,45 @@ export async function listBranches(pi: ExtensionAPI, cwd: string, signal?: Abort
       const [name = "", head = "", upstream = "", track = ""] = line.split("\0")
       return { name, current: head.trim() === "*", upstream: upstream || undefined, track: track || undefined }
     })
+}
+
+function worktreeBranchName(ref: string): string {
+  return ref.replace(/^refs\/heads\//u, "")
+}
+
+export function parseWorktreeList(output: string): WorktreeSummary[] {
+  return output
+    .split(/\n\s*\n/u)
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const worktree: WorktreeSummary = { path: "" }
+      for (const line of record.split("\n")) {
+        const [key = "", ...valueParts] = line.split(" ")
+        const value = valueParts.join(" ")
+        if (key === "worktree") {
+          worktree.path = value
+        } else if (key === "HEAD") {
+          worktree.head = value
+        } else if (key === "branch") {
+          worktree.branch = worktreeBranchName(value)
+        } else if (key === "detached") {
+          worktree.detached = true
+        } else if (key === "bare") {
+          worktree.bare = true
+        }
+      }
+      return worktree
+    })
+    .filter((worktree) => worktree.path.length > 0)
+}
+
+export async function listWorktrees(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<WorktreeSummary[]> {
+  const root = await requireGitRepository(pi, cwd, signal)
+  const args = ["worktree", "list", "--porcelain"]
+  const result = await git(pi, root, args, signal)
+  assertGitSuccess(result, args)
+  return parseWorktreeList(result.stdout)
 }
 
 export async function switchBranch(

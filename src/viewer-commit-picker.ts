@@ -10,7 +10,7 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
     this.loadingMessage = "Loading commits…"
     this.requestRender()
     try {
-      this.commits = await loadCommits(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.commits = await loadCommits(this.pi, this.activePath(), this.ctx.signal)
       this.pickerState = "open"
     } catch (error) {
       this.pickerState = "closed"
@@ -149,7 +149,7 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
     this.loadingMessage = "Loading working tree…"
     this.requestRender()
     try {
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       this.error = undefined
     } catch (error) {
@@ -179,7 +179,7 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
     this.loadingMessage = `Loading ${commit.hash}…`
     this.requestRender()
     try {
-      this.document = await loadCommitDiff(this.pi, this.ctx.cwd, commit, this.ctx.signal)
+      this.document = await loadCommitDiff(this.pi, this.activePath(), commit, this.ctx.signal)
       this.resetSelectionToFirstTreeFile()
       this.error = undefined
     } catch (error) {

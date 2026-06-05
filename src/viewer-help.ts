@@ -12,6 +12,7 @@ export const HELP_TITLES: Record<HelpContext, string> = {
   commitPicker: "Commit picker help",
   confirmDialog: "Confirmation help",
   stashPicker: "Stash picker help",
+  worktreePicker: "Worktree picker help",
   viewer: "Diff viewer help",
 }
 
@@ -68,6 +69,13 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
     { keys: "Esc/q", action: "Cancel and close the stash picker" },
     { keys: "?", action: "Show or close this help" },
   ],
+  worktreePicker: [
+    { keys: "type", action: "Filter worktrees by path, branch, or HEAD" },
+    { keys: "↑/↓", action: "Move through worktrees" },
+    { keys: "Enter", action: "Select the highlighted worktree" },
+    { keys: "Esc/q", action: "Cancel and close the worktree picker" },
+    { keys: "?", action: "Show or close this help" },
+  ],
   viewer: [
     { keys: "Tab", action: "Switch focus between the file tree and diff" },
     { keys: "↑/↓ or j/k", action: "Move files when focused on Files; scroll code in Diff" },
@@ -82,6 +90,7 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
     { keys: "I", action: "Initialize a git repository when none is present" },
     { keys: "D", action: "Discard selected working-tree file after confirmation" },
     { keys: "b", action: "Open the branch picker" },
+    { keys: "w", action: "Open the worktree picker" },
     { keys: "s", action: "Open stash actions" },
     { keys: "Ctrl+P", action: "Open the git command menu" },
     { keys: "Esc / q", action: "Close the diff viewer" },

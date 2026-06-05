@@ -58,6 +58,7 @@ export type HelpContext =
   | "confirmDialog"
   | "branchPicker"
   | "stashPicker"
+  | "worktreePicker"
 export type ThemeColor = Parameters<Theme["fg"]>[0]
 
 export const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor> = {

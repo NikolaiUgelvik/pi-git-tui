@@ -162,7 +162,7 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     this.statusMessage = undefined
     this.requestRender()
     try {
-      this.commitMessage = await generateCommitMessage(this.pi, this.ctx)
+      this.commitMessage = await generateCommitMessage(this.pi, this.activeContext())
       this.commitMessageCaret = this.commitMessageLength()
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
@@ -180,8 +180,8 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     this.statusMessage = undefined
     this.requestRender()
     try {
-      const output = await runGitCommit(this.pi, this.ctx.cwd, message, this.ctx.signal, this.commitAmend)
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      const output = await runGitCommit(this.pi, this.activePath(), message, this.ctx.signal, this.commitAmend)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       this.commitMessage = ""
       this.commitMessageCaret = 0

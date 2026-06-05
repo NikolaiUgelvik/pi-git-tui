@@ -120,7 +120,7 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
     this.statusMessage = undefined
     this.requestRender()
     try {
-      const message = await runGitCommand(this.pi, this.ctx.cwd, command, this.ctx.signal)
+      const message = await runGitCommand(this.pi, this.activePath(), command, this.ctx.signal)
       await this.refreshDocumentAfterCommand(command)
       this.statusMessage = message
     } catch (error) {
@@ -137,7 +137,7 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
     if (!command.refreshDiff || this.document.mode !== "working") {
       return
     }
-    this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+    this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
     this.resetSelectionToFirstTreeFile()
   }
 

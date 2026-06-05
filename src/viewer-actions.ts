@@ -107,7 +107,7 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
     this.requestRender()
     try {
       this.statusMessage = await this.executeConfirmedAction(action)
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       this.confirmState = "closed"
       this.confirmAction = undefined
@@ -123,10 +123,10 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
 
   protected executeConfirmedAction(action: ConfirmAction | undefined): Promise<string> {
     if (action === "init") {
-      return initializeGitRepository(this.pi, this.ctx.cwd, this.ctx.signal)
+      return initializeGitRepository(this.pi, this.activePath(), this.ctx.signal)
     }
     if (action === "discard" && this.confirmFile) {
-      return discardFileChanges(this.pi, this.ctx.cwd, this.confirmFile, this.ctx.signal)
+      return discardFileChanges(this.pi, this.activePath(), this.confirmFile, this.ctx.signal)
     }
     return Promise.reject(new Error("No confirmed action selected"))
   }
@@ -164,7 +164,7 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
       return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
     }
     if (this.confirmAction === "init") {
-      return [row(` Initialize git repo in ${this.ctx.cwd}?`), row(""), row(" [ OK ]   [ Cancel ]")]
+      return [row(` Initialize git repo in ${this.activePath()}?`), row(""), row(" [ OK ]   [ Cancel ]")]
     }
     return [
       row(` Discard all staged and unstaged changes for ${this.confirmFile?.path ?? "file"}?`),

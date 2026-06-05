@@ -1,9 +1,9 @@
 import { fit } from "./render-text.js"
 import type { HelpContext } from "./types.js"
 import { HELP_ACTIONS, HELP_TITLES, type HelpAction } from "./viewer-help.js"
-import { DiffViewerStashPicker } from "./viewer-stash-picker.js"
+import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js"
 
-export class DiffViewer extends DiffViewerStashPicker {
+export class DiffViewer extends DiffViewerWorktreePicker {
   protected renderOverlays(baseLines: string[], width: number): string[] {
     const renderedLines = this.renderActiveOverlay(baseLines, width)
     if (this.helpContext === undefined) {

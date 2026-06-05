@@ -63,7 +63,7 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
     this.loadingMessage = "Loading stashes…"
     this.requestRender()
     try {
-      this.stashes = await listStashes(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
       this.stashState = "open"
       this.clampStashSelection()
     } catch (error) {
@@ -199,17 +199,19 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
 
   protected async runStashCurrent(): Promise<void> {
     const succeeded = await this.runStashOperation("Stashing current changes…", () =>
-      stashCurrentChanges(this.pi, this.ctx.cwd, this.ctx.signal),
+      stashCurrentChanges(this.pi, this.activePath(), this.ctx.signal),
     )
     if (succeeded) {
-      this.stashes = await listStashes(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
       this.stashState = "open"
     }
   }
 
   protected async runStashApply(ref: string): Promise<void> {
     if (
-      await this.runStashOperation(`Applying ${ref}…`, () => applyStash(this.pi, this.ctx.cwd, ref, this.ctx.signal))
+      await this.runStashOperation(`Applying ${ref}…`, () =>
+        applyStash(this.pi, this.activePath(), ref, this.ctx.signal),
+      )
     ) {
       this.stashState = "closed"
     }
@@ -220,13 +222,13 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
     const action = this.stashConfirmAction
     const succeeded = await this.runStashOperation(`${action === "pop" ? "Popping" : "Dropping"} ${ref}…`, () => {
       if (action === "pop") {
-        return popStash(this.pi, this.ctx.cwd, ref, this.ctx.signal)
+        return popStash(this.pi, this.activePath(), ref, this.ctx.signal)
       }
-      return dropStash(this.pi, this.ctx.cwd, ref, this.ctx.signal)
+      return dropStash(this.pi, this.activePath(), ref, this.ctx.signal)
     })
     if (succeeded) {
       this.stashState = action === "drop" ? "open" : "closed"
-      this.stashes = await listStashes(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
     }
   }
 
@@ -238,7 +240,7 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
     this.requestRender()
     try {
       this.statusMessage = await operation()
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       return true
     } catch (error) {
@@ -257,7 +259,7 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
       return
     }
     try {
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
     } catch (refreshError) {
       const message = refreshError instanceof Error ? refreshError.message : String(refreshError)

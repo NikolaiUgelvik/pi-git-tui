@@ -58,7 +58,7 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
     this.loadingMessage = "Loading branches…"
     this.requestRender()
     try {
-      this.branches = await listBranches(this.pi, this.ctx.cwd, this.ctx.signal)
+      this.branches = await listBranches(this.pi, this.activePath(), this.ctx.signal)
       this.branchState = "open"
       this.clampBranchSelection()
     } catch (error) {
@@ -182,8 +182,8 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
     this.loadingMessage = `Switching to ${name}…`
     this.requestRender()
     try {
-      this.statusMessage = await switchBranch(this.pi, this.ctx.cwd, name, this.ctx.signal)
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.statusMessage = await switchBranch(this.pi, this.activePath(), name, this.ctx.signal)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       this.error = undefined
       this.branchState = "closed"
@@ -201,8 +201,8 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
     this.loadingMessage = `Creating ${name}…`
     this.requestRender()
     try {
-      this.statusMessage = await createAndSwitchBranch(this.pi, this.ctx.cwd, name, this.ctx.signal)
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.statusMessage = await createAndSwitchBranch(this.pi, this.activePath(), name, this.ctx.signal)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
       this.error = undefined
       this.branchState = "closed"

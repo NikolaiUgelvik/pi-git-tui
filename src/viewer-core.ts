@@ -12,6 +12,7 @@ export class DiffViewerCore {
   protected readonly theme: Theme
   protected readonly done: () => void
   protected readonly requestRender: () => void
+  protected activeCwd: string
 
   protected selectedFileIndex = 0
   protected diffScroll = 0
@@ -49,7 +50,16 @@ export class DiffViewerCore {
     this.document = document
     this.done = done
     this.requestRender = requestRender
+    this.activeCwd = ctx.cwd
     this.resetSelectionToFirstTreeFile()
+  }
+
+  protected activePath(): string {
+    return this.activeCwd
+  }
+
+  protected activeContext(): ExtensionContext {
+    return { ...this.ctx, cwd: this.activePath() }
   }
 
   protected handleHelpInput(data: string): boolean {
@@ -384,7 +394,7 @@ export class DiffViewerCore {
   }
 
   protected async refreshWorkingTreePreservingFile(path: string): Promise<void> {
-    this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+    this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
     if (!this.selectFileByPath(path)) {
       this.resetSelectionToFirstTreeFile()
     }
@@ -395,7 +405,7 @@ export class DiffViewerCore {
     this.statusMessage = `Updating ${path}…`
     this.requestRender()
     try {
-      const message = await stageOrUnstageFile(this.pi, this.ctx.cwd, path, this.ctx.signal)
+      const message = await stageOrUnstageFile(this.pi, this.activePath(), path, this.ctx.signal)
       await this.refreshWorkingTreePreservingFile(path)
       this.statusMessage = message
     } catch (error) {
@@ -411,8 +421,8 @@ export class DiffViewerCore {
     this.statusMessage = "Staging all changes…"
     this.requestRender()
     try {
-      this.statusMessage = await toggleAllChangesStaged(this.pi, this.ctx.cwd, this.ctx.signal)
-      this.document = await loadWorkingTreeDiff(this.pi, this.ctx)
+      this.statusMessage = await toggleAllChangesStaged(this.pi, this.activePath(), this.ctx.signal)
+      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
       this.resetSelectionToFirstTreeFile()
     } catch (error) {
       this.statusMessage = undefined

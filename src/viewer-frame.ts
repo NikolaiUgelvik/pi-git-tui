@@ -1,5 +1,6 @@
 import { DIFF_LINE_STYLE_RULES } from "./diff-line-style.js"
 import { fit } from "./render-text.js"
+import { renderScrollbar } from "./scrollbar.js"
 import { buildTreeRows } from "./tree.js"
 import { type DiffFile, type FocusPanel, TREE_STATUS_COLORS } from "./types.js"
 import { DiffViewerCore } from "./viewer-core.js"
@@ -74,7 +75,7 @@ export class DiffViewerFrame extends DiffViewerCore {
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • b branches • s stash • ^P commands • ? help • q close`,
+        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • b branches • w worktrees • s stash • ^P commands • ? help • q close`,
       ),
       width,
     )
@@ -82,7 +83,17 @@ export class DiffViewerFrame extends DiffViewerCore {
 
   protected renderTree(width: number, height: number): string[] {
     if (this.document.files.length === 0) {
-      return [fit(this.theme.fg("muted", "  No changes"), width), ...new Array(height - 1).fill(" ".repeat(width))]
+      const lines = [this.theme.fg("muted", "  No changes")]
+      while (lines.length < height) {
+        lines.push("")
+      }
+      return renderScrollbar(lines, {
+        width,
+        viewportHeight: height,
+        contentHeight: lines.length,
+        scrollOffset: 0,
+        theme: this.theme,
+      })
     }
 
     const rows = buildTreeRows(this.document.files)
@@ -100,12 +111,18 @@ export class DiffViewerFrame extends DiffViewerCore {
       const raw = `${indent}${icon}${row.label}`
       const file = row.fileIndex === undefined ? undefined : this.document.files[row.fileIndex]
       const colored = file ? this.colorTreeFile(raw, file, isSelected) : this.theme.fg("muted", raw)
-      return fit(isSelected && isTreeFocused ? this.theme.bg("selectedBg", colored) : colored, width)
+      return isSelected && isTreeFocused ? this.theme.bg("selectedBg", colored) : colored
     })
     while (lines.length < height) {
-      lines.push(" ".repeat(width))
+      lines.push("")
     }
-    return lines
+    return renderScrollbar(lines, {
+      width,
+      viewportHeight: height,
+      contentHeight: rows.length,
+      scrollOffset: start,
+      theme: this.theme,
+    })
   }
 
   protected colorTreeFile(line: string, file: DiffFile, selected: boolean): string {
@@ -117,19 +134,35 @@ export class DiffViewerFrame extends DiffViewerCore {
     const file = this.document.files[this.selectedFileIndex]
     if (!file) {
       const message = this.emptyDiffMessage()
-      return [fit(this.theme.fg("muted", message), width), ...new Array(height - 1).fill(" ".repeat(width))]
+      const lines = [this.theme.fg("muted", message)]
+      while (lines.length < height) {
+        lines.push("")
+      }
+      return renderScrollbar(lines, {
+        width,
+        viewportHeight: height,
+        contentHeight: lines.length,
+        scrollOffset: 0,
+        minWidth: 100,
+        theme: this.theme,
+      })
     }
 
     const diffLines = file.lines
     const maxScroll = Math.max(0, diffLines.length - height)
     this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll))
-    const visible = diffLines
-      .slice(this.diffScroll, this.diffScroll + height)
-      .map((line) => fit(this.colorDiffLine(line), width))
+    const visible = diffLines.slice(this.diffScroll, this.diffScroll + height).map((line) => this.colorDiffLine(line))
     while (visible.length < height) {
-      visible.push(" ".repeat(width))
+      visible.push("")
     }
-    return visible
+    return renderScrollbar(visible, {
+      width,
+      viewportHeight: height,
+      contentHeight: diffLines.length,
+      scrollOffset: this.diffScroll,
+      minWidth: 100,
+      theme: this.theme,
+    })
   }
 
   protected emptyDiffMessage(): string {
