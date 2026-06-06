@@ -67,11 +67,11 @@ function overlayViewer(): TestOverlayViewer {
   return createViewer(TestOverlayViewer, 80)
 }
 
-function frameViewer(document: DiffDocument): TestFrameViewer {
+function frameViewer(document: DiffDocument, viewerTheme: Theme = theme): TestFrameViewer {
   return new TestFrameViewer(
     {} as ExtensionAPI,
     {} as ExtensionContext,
-    theme,
+    viewerTheme,
     document,
     () => {},
     () => {},
@@ -145,6 +145,89 @@ test("frame diff renders scrollbar only when pane is wide enough", () => {
 
 test("diff body uses all terminal rows left after overlay margin and chrome", () => {
   assert.equal(viewerForRows(80).visibleDiffRows(), 71)
+})
+
+test("frame diff renders structured rows and hides raw metadata", () => {
+  const viewer = frameViewer({
+    ...emptyDocument,
+    files: [
+      file("src/example.ts", [
+        "diff --git a/src/example.ts b/src/example.ts",
+        "index 1111111..2222222 100644",
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1,2 +1,3 @@ function demo()",
+        " context",
+        "-old",
+        "+new",
+        "+extra",
+      ]),
+    ],
+  })
+
+  const lines = viewer.diffLines(99, 6).map((line) => line.trimEnd())
+
+  assert.deepEqual(lines, [
+    "@@ src/example.ts · lines 1-3 @@ function demo()",
+    " 1 │ context",
+    "-2 │ old",
+    "+2 │ new",
+    "+3 │ extra",
+    "",
+  ])
+  assert.equal(
+    lines.some((line) => line.includes("diff --git")),
+    false,
+  )
+})
+
+test("frame diff scrolls by formatted rows and aligns scrollbar height", () => {
+  const document = {
+    ...emptyDocument,
+    files: [
+      file("src/example.ts", [
+        "diff --git a/src/example.ts b/src/example.ts",
+        "index 1111111..2222222 100644",
+        "--- a/src/example.ts",
+        "+++ b/src/example.ts",
+        "@@ -1,1 +1,2 @@",
+        " one",
+        "+two",
+      ]),
+    ],
+  }
+
+  assert.deepEqual(
+    frameViewer(document)
+      .diffLines(99, 2, 10)
+      .map((line) => line.trimEnd()),
+    [" 1 │ one", "+2 │ two"],
+  )
+  assert.deepEqual(
+    frameViewer(document)
+      .diffLines(100, 2, 10)
+      .map((line) => line.at(-1)),
+    ["│", "┃"],
+  )
+})
+
+test("frame diff preserves conflict marker styling in structured rows", () => {
+  const styledTheme = {
+    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => `<b>${text}</b>`,
+  } as Theme
+  const viewer = frameViewer(
+    {
+      ...emptyDocument,
+      files: [file("conflict.ts", ["@@ -1,0 +1,1 @@", "+<<<<<<< ours"])],
+    },
+    styledTheme,
+  )
+
+  const lines = viewer.diffLines(99, 2).map((line) => line.trimEnd())
+
+  assert.equal(lines[1], "<error><b>+1 │ <<<<<<< ours</b></error>")
 })
 
 test("overlay merge preserves ANSI styling outside replaced columns", () => {

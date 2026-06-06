@@ -36,7 +36,7 @@ function isDiffMetadataLine(line: string): boolean {
   return ["index ", "new file", "deleted file", "similarity ", "rename "].some((prefix) => line.startsWith(prefix))
 }
 
-export const DIFF_LINE_STYLE_RULES: DiffLineStyleRule[] = [
+const DIFF_LINE_STYLE_RULES: DiffLineStyleRule[] = [
   { matches: isConflictBoundaryLine, color: "error", bold: true },
   { matches: isConflictSeparatorLine, color: "warning", bold: true },
   { matches: isAddedDiffLine, color: "toolDiffAdded" },
@@ -45,3 +45,7 @@ export const DIFF_LINE_STYLE_RULES: DiffLineStyleRule[] = [
   { matches: isDiffTitleLine, color: "toolTitle", bold: true },
   { matches: isDiffMetadataLine, color: "muted" },
 ]
+
+export function diffLineStyleForText(line: string): DiffLineStyleRule | undefined {
+  return DIFF_LINE_STYLE_RULES.find(({ matches }) => matches(line))
+}

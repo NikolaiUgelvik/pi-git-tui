@@ -1,4 +1,5 @@
-import { DIFF_LINE_STYLE_RULES } from "./diff-line-style.js"
+import { type DiffDisplayRow, formatDiffDisplay } from "./diff-display.js"
+import { diffLineStyleForText } from "./diff-line-style.js"
 import { fit } from "./render-text.js"
 import { renderScrollbar } from "./scrollbar.js"
 import { buildTreeRows } from "./tree.js"
@@ -148,21 +149,86 @@ export class DiffViewerFrame extends DiffViewerCore {
       })
     }
 
-    const diffLines = file.lines
-    const maxScroll = Math.max(0, diffLines.length - height)
+    const diffRows = formatDiffDisplay(file)
+    const maxScroll = Math.max(0, diffRows.length - height)
     this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll))
-    const visible = diffLines.slice(this.diffScroll, this.diffScroll + height).map((line) => this.colorDiffLine(line))
+    const gutterWidth = this.diffGutterWidth(diffRows)
+    const visible = diffRows
+      .slice(this.diffScroll, this.diffScroll + height)
+      .map((row) => this.renderDiffDisplayRow(row, file, gutterWidth))
     while (visible.length < height) {
       visible.push("")
     }
     return renderScrollbar(visible, {
       width,
       viewportHeight: height,
-      contentHeight: diffLines.length,
+      contentHeight: diffRows.length,
       scrollOffset: this.diffScroll,
       minWidth: 100,
       theme: this.theme,
     })
+  }
+
+  protected diffGutterWidth(rows: DiffDisplayRow[]): number {
+    return rows.reduce((width, row) => {
+      if (!this.isNumberedDiffRow(row)) {
+        return width
+      }
+      return Math.max(width, String(row.lineNumber).length)
+    }, 0)
+  }
+
+  protected renderDiffDisplayRow(row: DiffDisplayRow, file: DiffFile, gutterWidth: number): string {
+    const line = this.diffDisplayRowText(row, file, gutterWidth)
+    return this.colorDiffDisplayRow(row, line)
+  }
+
+  protected diffDisplayRowText(row: DiffDisplayRow, file: DiffFile, gutterWidth: number): string {
+    if (row.type === "hunk") {
+      const section = row.sectionText ? ` ${row.sectionText}` : ""
+      return `@@ ${file.path} · ${this.hunkRange(row)} @@${section}`
+    }
+    if (this.isNumberedDiffRow(row)) {
+      return `${row.marker}${String(row.lineNumber).padStart(gutterWidth)} │ ${row.text}`
+    }
+    return row.text
+  }
+
+  protected hunkRange(row: Extract<DiffDisplayRow, { type: "hunk" }>): string {
+    if (row.newCount > 0) {
+      return `lines ${this.lineRange(row.newStart, row.newCount)}`
+    }
+    return `old lines ${this.lineRange(row.oldStart, row.oldCount)}`
+  }
+
+  protected lineRange(start: number, count: number): string {
+    return count === 1 ? String(start) : `${start}-${start + count - 1}`
+  }
+
+  protected isNumberedDiffRow(
+    row: DiffDisplayRow,
+  ): row is Extract<DiffDisplayRow, { type: "context" | "addition" | "deletion" }> {
+    return row.type === "context" || row.type === "addition" || row.type === "deletion"
+  }
+
+  protected colorDiffDisplayRow(row: DiffDisplayRow, line: string): string {
+    const probe = this.isNumberedDiffRow(row) ? `${row.marker}${row.text}` : line
+    const conflictRule = diffLineStyleForText(probe)
+    if (conflictRule?.bold) {
+      return this.theme.fg(conflictRule.color, this.theme.bold(line))
+    }
+
+    const color =
+      row.type === "addition"
+        ? "toolDiffAdded"
+        : row.type === "deletion"
+          ? "toolDiffRemoved"
+          : row.type === "hunk"
+            ? "accent"
+            : row.type === "summary" || row.type === "unknown"
+              ? "muted"
+              : "toolDiffContext"
+    return this.theme.fg(color, line)
   }
 
   protected emptyDiffMessage(): string {
@@ -175,7 +241,7 @@ export class DiffViewerFrame extends DiffViewerCore {
   }
 
   protected colorDiffLine(line: string): string {
-    const rule = DIFF_LINE_STYLE_RULES.find(({ matches }) => matches(line))
+    const rule = diffLineStyleForText(line)
     if (!rule) {
       return this.theme.fg("toolDiffContext", line)
     }
