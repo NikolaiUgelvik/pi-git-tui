@@ -1,15 +1,25 @@
-import { matchesKey } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDiff } from "./git.js"
 import { listWorktrees, type WorktreeSummary } from "./git-extras.js"
 import type { HelpContext } from "./types.js"
 import { DiffViewerStashPicker } from "./viewer-stash-picker.js"
+import { WorktreePickerController } from "./worktree-picker-controller.js"
 
 export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
   protected worktreeState: "closed" | "loading" | "open" = "closed"
-  protected worktrees: WorktreeSummary[] = []
-  protected worktreeSearchQuery = ""
-  protected selectedWorktreeIndex = 0
-  protected worktreeScroll = 0
+  protected worktreePickerController: WorktreePickerController
+
+  constructor(...args: ConstructorParameters<typeof DiffViewerStashPicker>) {
+    super(...args)
+    this.worktreePickerController = new WorktreePickerController({
+      onSwitch: (worktree: WorktreeSummary) => {
+        void this.switchToWorktree(worktree).catch((error: unknown) => this.showAsyncError(error))
+      },
+      onClose: () => {
+        this.worktreeState = "closed"
+      },
+      onRequestRender: () => this.requestRender(),
+    })
+  }
 
   protected override featureHelpContext(): HelpContext | undefined {
     if (this.worktreeState !== "closed") {
@@ -54,17 +64,21 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     }
     this.error = undefined
     this.worktreeState = "loading"
+    this.worktreePickerController.state = "loading"
     this.loadingMessage = "Loading worktrees…"
+    this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      this.worktrees = await listWorktrees(this.pi, this.activePath(), this.ctx.signal)
+      const worktrees = await listWorktrees(this.pi, this.activePath(), this.ctx.signal)
       this.worktreeState = "open"
-      this.clampWorktreeSelection()
+      this.worktreePickerController.open(worktrees, this.activePath())
     } catch (error) {
       this.worktreeState = "closed"
+      this.worktreePickerController.state = "closed"
       this.error = error instanceof Error ? error.message : String(error)
     } finally {
       this.loadingMessage = undefined
+      this.worktreePickerController.loadingMessage = undefined
       this.requestRender()
     }
   }
@@ -73,80 +87,15 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     if (this.worktreeState === "loading") {
       return
     }
-    if (this.closeWorktreeOnCancel(data)) {
-      return
-    }
-    this.updateWorktreePickerInput(data)
-    this.clampWorktreeSelection()
-    this.requestRender()
-  }
-
-  protected closeWorktreeOnCancel(data: string): boolean {
-    if (!matchesKey(data, "escape") && !this.isKey(data, "q")) {
-      return false
-    }
-    this.worktreeState = "closed"
-    this.requestRender()
-    return true
-  }
-
-  protected updateWorktreePickerInput(data: string): void {
-    const handlers = [
-      () => this.handleWorktreeSearchBackspace(data),
-      () => this.handleWorktreeSelectionMove(data),
-      () => this.handleWorktreeSelection(data),
-      () => this.handleWorktreeSearchText(data),
-    ]
-    for (const handler of handlers) {
-      if (handler()) {
-        return
-      }
-    }
-  }
-
-  protected handleWorktreeSearchBackspace(data: string): boolean {
-    if (!this.isBackspace(data)) {
-      return false
-    }
-    this.worktreeSearchQuery = [...this.worktreeSearchQuery].slice(0, -1).join("")
-    this.resetWorktreeScroll()
-    return true
-  }
-
-  protected handleWorktreeSearchText(data: string): boolean {
-    if (!this.isPrintableInput(data)) {
-      return false
-    }
-    this.worktreeSearchQuery += data
-    this.resetWorktreeScroll()
-    return true
-  }
-
-  protected handleWorktreeSelectionMove(data: string): boolean {
-    const nextIndex = this.nextListSelectionIndex(data, this.selectedWorktreeIndex, this.worktreeItemCount())
-    if (nextIndex === undefined) {
-      return false
-    }
-    this.selectedWorktreeIndex = nextIndex
-    return true
-  }
-
-  protected handleWorktreeSelection(data: string): boolean {
-    if (!this.isEnter(data)) {
-      return false
-    }
-    const worktree = this.worktreeItem(this.selectedWorktreeIndex)
-    if (!worktree) {
-      return true
-    }
-    this.switchToWorktree(worktree).catch((error: unknown) => this.showAsyncError(error))
-    return true
+    this.worktreePickerController.handleInput(data)
   }
 
   protected async switchToWorktree(worktree: WorktreeSummary): Promise<void> {
     const previousPath = this.activePath()
     this.worktreeState = "loading"
+    this.worktreePickerController.state = "loading"
     this.loadingMessage = `Loading ${worktree.path}…`
+    this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
       this.activeCwd = worktree.path
@@ -155,112 +104,22 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
       this.error = undefined
       this.statusMessage = `Viewing ${worktree.path}`
       this.worktreeState = "closed"
+      this.worktreePickerController.state = "closed"
     } catch (error) {
       this.activeCwd = previousPath
       this.error = error instanceof Error ? error.message : String(error)
       this.worktreeState = "open"
+      this.worktreePickerController.state = "open"
     } finally {
       this.loadingMessage = undefined
+      this.worktreePickerController.loadingMessage = undefined
       this.requestRender()
     }
   }
 
-  protected resetWorktreeScroll(): void {
-    this.selectedWorktreeIndex = 0
-    this.worktreeScroll = 0
-  }
-
-  protected clampWorktreeSelection(): void {
-    this.selectedWorktreeIndex = Math.max(
-      0,
-      Math.min(Math.max(0, this.worktreeItemCount() - 1), this.selectedWorktreeIndex),
-    )
-  }
-
-  protected worktreeItemCount(): number {
-    return this.worktreeItems().length
-  }
-
-  protected worktreeItem(index: number): WorktreeSummary | undefined {
-    return this.worktreeItems()[index]
-  }
-
-  protected worktreeItems(): WorktreeSummary[] {
-    const tokens = this.searchTokens(this.worktreeSearchQuery)
-    if (tokens.length === 0) {
-      return this.worktrees
-    }
-    return this.worktrees.filter((worktree) => this.matchesSearch(this.worktreeSearchText(worktree), tokens))
-  }
-
-  protected worktreeSearchText(worktree: WorktreeSummary): string {
-    return `${worktree.path} ${this.worktreeRefLabel(worktree)} ${worktree.head ?? ""}`
-  }
-
   protected renderWorktreeOverlay(baseLines: string[], width: number): string[] {
     const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const row = (content: string) => this.commitPickerOverlayRow(content, layout.overlayWidth)
-    const overlay = [
-      this.commitPickerBorder("top", layout.overlayWidth),
-      row(` ${this.theme.fg("accent", this.theme.bold("Worktrees"))}`),
-      row(` ${this.theme.fg("dim", "type search • ↑↓ navigate • enter select • ? help • esc cancel")}`),
-      ...this.worktreeOverlayBodyRows(row, layout.maxItems),
-      row(""),
-      this.commitPickerBorder("bottom", layout.overlayWidth),
-    ]
+    const overlay = this.worktreePickerController.renderOverlayLines(baseLines.length, width, this.theme)
     return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
-  }
-
-  protected worktreeOverlayBodyRows(row: (content: string) => string, maxItems: number): string[] {
-    if (this.worktreeState === "loading") {
-      return [row(""), row(` ${this.theme.fg("warning", this.loadingMessage ?? "Loading…")}`)]
-    }
-    return [
-      row(this.renderWorktreeSearchLine()),
-      row(""),
-      ...this.visibleWorktreeItems(maxItems).map(({ worktree, index }) =>
-        row(this.renderWorktreeItem(worktree, index)),
-      ),
-    ]
-  }
-
-  protected renderWorktreeSearchLine(): string {
-    const query = this.worktreeSearchQuery
-      ? `${this.worktreeSearchQuery}▌`
-      : this.theme.fg("muted", "type to filter worktrees")
-    return ` Search: ${query}`
-  }
-
-  protected visibleWorktreeItems(maxItems: number): Array<{ worktree: WorktreeSummary; index: number }> {
-    this.worktreeScroll = this.nextListScroll(
-      this.selectedWorktreeIndex,
-      this.worktreeScroll,
-      this.worktreeItemCount(),
-      maxItems,
-    )
-    return this.worktreeItems()
-      .slice(this.worktreeScroll, this.worktreeScroll + maxItems)
-      .map((worktree, offset) => ({ worktree, index: this.worktreeScroll + offset }))
-  }
-
-  protected renderWorktreeItem(worktree: WorktreeSummary, index: number): string {
-    const selected = index === this.selectedWorktreeIndex
-    const marker = selected ? "▶" : " "
-    const current = worktree.path === this.activePath() ? this.theme.fg("success", " current") : ""
-    const line = ` ${marker} ${this.theme.fg("accent", worktree.path)} ${this.theme.fg("muted", this.worktreeRefLabel(worktree))}${current}`
-    return selected ? this.theme.bg("selectedBg", line) : line
-  }
-
-  protected worktreeRefLabel(worktree: WorktreeSummary): string {
-    if (worktree.branch) {
-      return worktree.branch
-    }
-    if (worktree.detached) {
-      return `detached ${worktree.head ?? "HEAD"}`
-    }
-    if (worktree.bare) {
-      return "bare"
-    }
-    return worktree.head ?? "HEAD"
   }
 }

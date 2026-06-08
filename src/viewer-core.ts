@@ -3,7 +3,18 @@ import { matchesKey } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
 import { fit } from "./render-text.js"
 import { buildTreeRows } from "./tree.js"
-import type { CommitSummary, DiffDocument, FocusPanel, HelpContext } from "./types.js"
+import type { DiffDocument, FocusPanel, HelpContext } from "./types.js"
+import {
+  arrowScrollDelta as inputArrowScrollDelta,
+  isEnterInput,
+  isHelpCloseInput as isHelpCloseKey,
+  isHelpKey as isHelpOpenKey,
+  isPageDownInput,
+  isPageUpInput,
+  isPrintableInput as isPrintableKey,
+  isShiftEnterInput,
+  isViewerKey,
+} from "./viewer-key-input.js"
 
 export class DiffViewerCore {
   protected document: DiffDocument
@@ -16,14 +27,7 @@ export class DiffViewerCore {
 
   protected selectedFileIndex = 0
   protected diffScroll = 0
-  protected commitScroll = 0
-  protected selectedCommitIndex = 0
-  protected commandMenuScroll = 0
-  protected selectedCommandIndex = 0
   protected focusedPanel: FocusPanel = "tree"
-  protected commits: CommitSummary[] = []
-  protected commitSearchQuery = ""
-  protected commandMenuSearchQuery = ""
   protected commitMessage = ""
   protected commitMessageCaret = 0
   protected commitAmend = false
@@ -79,11 +83,11 @@ export class DiffViewerCore {
   }
 
   protected isHelpCloseInput(data: string): boolean {
-    return this.isHelpKey(data) || matchesKey(data, "escape") || this.isKey(data, "q")
+    return isHelpCloseKey(data)
   }
 
   protected isHelpKey(data: string): boolean {
-    return data === "?"
+    return isHelpOpenKey(data)
   }
 
   protected currentHelpContext(): HelpContext {
@@ -237,13 +241,7 @@ export class DiffViewerCore {
   }
 
   protected arrowScrollDelta(data: string): number {
-    if (matchesKey(data, "up") || this.isKey(data, "k")) {
-      return -1
-    }
-    if (matchesKey(data, "down") || this.isKey(data, "j")) {
-      return 1
-    }
-    return 0
+    return inputArrowScrollDelta(data)
   }
 
   protected handlePageScroll(data: string): boolean {
@@ -279,33 +277,27 @@ export class DiffViewerCore {
   }
 
   protected isKey(data: string, key: string): boolean {
-    return data === key || data === key.toUpperCase()
+    return isViewerKey(data, key)
   }
 
   protected isEnter(data: string): boolean {
-    return matchesKey(data, "enter") || matchesKey(data, "return") || data === "\r" || data === "\n"
+    return isEnterInput(data)
   }
 
   protected isShiftEnter(data: string): boolean {
-    return matchesKey(data, "shift+enter") || data === "\x1b[13;2u"
+    return isShiftEnterInput(data)
   }
 
   protected isPageUp(data: string): boolean {
-    return matchesKey(data, "pageUp") || data === "\x1b[5~"
+    return isPageUpInput(data)
   }
 
   protected isPageDown(data: string): boolean {
-    return matchesKey(data, "pageDown") || data === "\x1b[6~"
+    return isPageDownInput(data)
   }
 
   protected isPrintableInput(data: string): boolean {
-    if (data.length === 0 || data.includes("\x1b")) {
-      return false
-    }
-    return [...data].every((char) => {
-      const codePoint = char.codePointAt(0)
-      return codePoint !== undefined && codePoint >= 32 && codePoint !== 127
-    })
+    return isPrintableKey(data)
   }
 
   protected showAsyncError(error: unknown): void {
@@ -430,53 +422,5 @@ export class DiffViewerCore {
     } finally {
       this.requestRender()
     }
-  }
-
-  protected searchTokens(query: string): string[] {
-    return query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  }
-
-  protected matchesSearch(value: string, tokens: string[]): boolean {
-    const haystack = value.toLowerCase()
-    return tokens.every((token) => haystack.includes(token))
-  }
-
-  protected nextListSelectionIndex(data: string, selectedIndex: number, itemCount: number): number | undefined {
-    const lastIndex = Math.max(0, itemCount - 1)
-    if (matchesKey(data, "up")) {
-      return Math.max(0, selectedIndex - 1)
-    }
-    if (matchesKey(data, "down")) {
-      return Math.min(lastIndex, selectedIndex + 1)
-    }
-    return this.nextListSelectionPageIndex(data, selectedIndex, lastIndex)
-  }
-
-  protected nextListSelectionPageIndex(data: string, selectedIndex: number, lastIndex: number): number | undefined {
-    if (this.isPageUp(data)) {
-      return Math.max(0, selectedIndex - 10)
-    }
-    if (this.isPageDown(data)) {
-      return Math.min(lastIndex, selectedIndex + 10)
-    }
-    if (matchesKey(data, "home")) {
-      return 0
-    }
-    if (matchesKey(data, "end")) {
-      return lastIndex
-    }
-  }
-
-  protected nextListScroll(selectedIndex: number, currentScroll: number, itemCount: number, maxItems: number): number {
-    const maxScroll = Math.max(0, itemCount - maxItems)
-    const centeredScroll = Math.max(0, selectedIndex - Math.floor(maxItems / 2))
-    let scroll = Math.max(0, Math.min(currentScroll, maxScroll, centeredScroll))
-    if (selectedIndex < scroll) {
-      scroll = selectedIndex
-    }
-    if (selectedIndex >= scroll + maxItems) {
-      scroll = selectedIndex - maxItems + 1
-    }
-    return scroll
   }
 }

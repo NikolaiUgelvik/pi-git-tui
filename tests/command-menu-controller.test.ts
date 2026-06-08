@@ -1,0 +1,308 @@
+import assert from "node:assert/strict"
+import { test } from "node:test"
+import type { Theme } from "@earendil-works/pi-coding-agent"
+import { CommandMenuController } from "../src/command-menu-controller.js"
+import type { GitCommand } from "../src/types.js"
+import { GIT_COMMANDS } from "../src/types.js"
+
+// --- Test harness ---
+
+const mockTheme = {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+} as unknown as Theme
+
+function createController(runCommandSpy?: (cmd: GitCommand) => void) {
+  let closed = false
+  let renderCalled = false
+  const callbacks = {
+    onRunCommand: async (command: GitCommand) => {
+      if (runCommandSpy) runCommandSpy(command)
+    },
+    onClose: () => {
+      closed = true
+    },
+    onRequestRender: () => {
+      renderCalled = true
+    },
+  }
+  const controller = new CommandMenuController(callbacks)
+  return {
+    controller,
+    callbacks,
+    get closed() {
+      return closed
+    },
+    get renderCalled() {
+      return renderCalled
+    },
+  }
+}
+
+// --- Opening the menu ---
+
+test("opening the menu sets state to open", () => {
+  const { controller } = createController()
+  assert.equal(controller.state, "closed")
+  controller.open()
+  assert.equal(controller.state, "open")
+  assert.equal(controller.isOpen(), true)
+})
+
+test("opening the menu resets list state", () => {
+  const { controller } = createController()
+  controller.open()
+  assert.equal(controller.list.searchQuery, "")
+  assert.equal(controller.list.selectedIndex, 0)
+  assert.equal(controller.list.scroll, 0)
+})
+
+test("opening the menu requests render", () => {
+  const h = createController()
+  h.controller.open()
+  assert.equal(h.renderCalled, true)
+})
+
+// --- Closing the menu ---
+
+test("closing the menu sets state to closed", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.close()
+  assert.equal(controller.state, "closed")
+  assert.equal(controller.isOpen(), false)
+})
+
+test("closing the menu calls onClose callback", () => {
+  const h = createController()
+  h.controller.open()
+  h.controller.close()
+  assert.equal(h.closed, true)
+})
+
+test("closing the menu clears loading message", () => {
+  const { controller } = createController()
+  controller.loadingMessage = "Running…"
+  controller.close()
+  assert.equal(controller.loadingMessage, undefined)
+})
+
+// --- Search filtering ---
+
+test("typing a character appends to search query", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("f")
+  assert.equal(controller.list.searchQuery, "f")
+})
+
+test("typing multiple characters builds search query", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("p")
+  controller.handleInput("u")
+  controller.handleInput("s")
+  assert.equal(controller.list.searchQuery, "pus")
+})
+
+test("backspace removes last character from search", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("p")
+  controller.handleInput("u")
+  controller.handleInput("s")
+  controller.handleInput("\b") // backspace
+  assert.equal(controller.list.searchQuery, "pu")
+})
+
+test("backspace on empty query keeps it empty", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\b") // backspace
+  assert.equal(controller.list.searchQuery, "")
+})
+
+test("search filters items", () => {
+  const { controller } = createController()
+  controller.open()
+  // No search - all items visible
+  assert.equal(controller.list.filteredCount, GIT_COMMANDS.length)
+  // Search for "push" - should match Push and Force Push
+  controller.handleInput("p")
+  controller.handleInput("u")
+  controller.handleInput("s")
+  controller.handleInput("h")
+  assert.ok(controller.list.filteredCount < GIT_COMMANDS.length)
+})
+
+// --- Navigation ---
+
+test("down arrow moves selection down", () => {
+  const { controller } = createController()
+  controller.open()
+  assert.equal(controller.list.selectedIndex, 0)
+  controller.handleInput("\x1b[B") // down
+  assert.equal(controller.list.selectedIndex, 1)
+})
+
+test("up arrow moves selection up", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[B") // down to 1
+  assert.equal(controller.list.selectedIndex, 1)
+  controller.handleInput("\x1b[A") // up to 0
+  assert.equal(controller.list.selectedIndex, 0)
+})
+
+test("up arrow at top stays at 0", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[A") // up at 0
+  assert.equal(controller.list.selectedIndex, 0)
+})
+
+test("down arrow at bottom stays at last", () => {
+  const { controller } = createController()
+  controller.open()
+  // Go to the end
+  const last = GIT_COMMANDS.length - 1
+  controller.handleInput("\x1b[F") // end
+  assert.equal(controller.list.selectedIndex, last)
+  controller.handleInput("\x1b[B") // down at last
+  assert.equal(controller.list.selectedIndex, last)
+})
+
+test("home key moves to first", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[B") // down to 1
+  controller.handleInput("\x1b[H") // home
+  assert.equal(controller.list.selectedIndex, 0)
+})
+
+test("end key moves to last", () => {
+  const { controller } = createController()
+  controller.open()
+  const last = GIT_COMMANDS.length - 1
+  controller.handleInput("\x1b[F") // end
+  assert.equal(controller.list.selectedIndex, last)
+})
+
+test("page up moves selection up by 10", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[F") // end (index 5 for 6 items)
+  controller.handleInput("\x1b[5~") // page up
+  assert.equal(controller.list.selectedIndex, 0) // clamped at 0
+})
+
+test("page down moves selection down by 10", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[6~") // page down
+  assert.equal(controller.list.selectedIndex, GIT_COMMANDS.length - 1) // clamped at last
+})
+
+// --- Selection ---
+
+test("enter selects the current command", () => {
+  let selectedCommand: GitCommand | undefined
+  const { controller } = createController((cmd) => {
+    selectedCommand = cmd
+  })
+  controller.open()
+  controller.handleInput("\r") // enter
+  assert.equal(selectedCommand?.label, GIT_COMMANDS[0].label)
+})
+
+test("enter after navigating selects the new command", () => {
+  let selectedCommand: GitCommand | undefined
+  const { controller } = createController((cmd) => {
+    selectedCommand = cmd
+  })
+  controller.open()
+  controller.handleInput("\x1b[B") // down to 1
+  controller.handleInput("\r") // enter
+  assert.equal(selectedCommand?.label, GIT_COMMANDS[1].label)
+})
+
+// --- Escape closes the menu ---
+
+test("escape closes the menu", () => {
+  const h = createController()
+  h.controller.open()
+  assert.equal(h.controller.state, "open")
+  h.controller.handleInput("\x1b") // escape
+  assert.equal(h.controller.state, "closed")
+  assert.equal(h.closed, true)
+})
+
+// --- Loading state blocks input ---
+
+test("loading state ignores input", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.state = "loading"
+  controller.handleInput("\x1b[B") // down
+  assert.equal(controller.list.selectedIndex, 0) // didn't move
+  controller.handleInput("\x1b[O") // escape
+  assert.equal(controller.state, "loading") // didn't close
+})
+
+// --- Rendering ---
+
+test("renderOverlayLines produces expected number of lines", () => {
+  const { controller } = createController()
+  controller.open()
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  // Border top, title, subtitle, search, blank, items..., blank, border bottom
+  // With 6 commands: 3 header + 6 items + 2 footer + search + 2 blank = 14
+  assert.ok(lines.length >= 8)
+})
+
+test("renderOverlayLines includes title", () => {
+  const { controller } = createController()
+  controller.open()
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  const titleLine = lines.find((line) => line.includes("Command menu"))
+  assert.ok(titleLine !== undefined)
+})
+
+test("renderOverlayLines shows all commands when no search", () => {
+  const { controller } = createController()
+  controller.open()
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  for (const command of GIT_COMMANDS) {
+    assert.ok(
+      lines.some((line) => line.includes(command.label)),
+      `Missing ${command.label}`,
+    )
+  }
+})
+
+test("renderOverlayLines shows loading message", () => {
+  const { controller } = createController()
+  controller.state = "loading"
+  controller.loadingMessage = "Running…"
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  assert.ok(lines.some((line) => line.includes("Running…")))
+})
+
+test("renderOverlayLines shows no matching commands", () => {
+  const { controller } = createController()
+  controller.open()
+  // Search for something that won't match
+  controller.list.searchQuery = "xyznonexistent"
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  assert.ok(lines.some((line) => line.includes("No matching commands")))
+})
+
+test("renderOverlayLines marks selected item", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("\x1b[B") // down to index 1
+  const lines = controller.renderOverlayLines(40, 100, mockTheme)
+  const selectedLine = lines.find((line) => line.includes("▶"))
+  assert.ok(selectedLine !== undefined)
+})

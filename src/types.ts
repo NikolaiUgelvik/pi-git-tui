@@ -1,5 +1,25 @@
 import type { Theme } from "@earendil-works/pi-coding-agent"
 
+export interface BranchSummary {
+  name: string
+  current: boolean
+  upstream?: string
+  track?: string
+}
+
+export interface StashSummary {
+  ref: string
+  message: string
+}
+
+export interface WorktreeSummary {
+  path: string
+  head?: string
+  branch?: string
+  detached?: boolean
+  bare?: boolean
+}
+
 export const COMMIT_LIMIT = 200
 export const GIT_TIMEOUT_MS = 10_000
 export const MAX_UNTRACKED_FILE_BYTES = 256 * 1024
@@ -88,3 +108,11 @@ export const GIT_COMMANDS: GitCommand[] = [
     refreshDiff: true,
   },
 ]
+
+// --- Viewer action types ---
+
+/** Stash confirmation action choice. */
+export type StashConfirm = "pop" | "drop"
+
+/** Confirmation dialog action choice. */
+export type ConfirmAction = "init" | "discard"

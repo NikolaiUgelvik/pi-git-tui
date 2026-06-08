@@ -1,0 +1,11 @@
+diff --git a/src/old-file.ts b/src/old-file.ts
+deleted file mode 100644
+index 1234567..0000000
+--- a/src/old-file.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-export function hello(): string {
+-  const greeting = "Hello"
+-  const target = "World"
+-  return `${greeting}, ${target}!`
+-}

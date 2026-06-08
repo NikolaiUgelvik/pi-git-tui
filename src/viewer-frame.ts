@@ -3,11 +3,30 @@ import { diffLineStyleForText } from "./diff-line-style.js"
 import { fit } from "./render-text.js"
 import { renderScrollbar } from "./scrollbar.js"
 import { buildTreeRows } from "./tree.js"
-import { type DiffFile, type FocusPanel, TREE_STATUS_COLORS } from "./types.js"
+import { type DiffFile, type FocusPanel, type ThemeColor, TREE_STATUS_COLORS } from "./types.js"
 import { DiffViewerCore } from "./viewer-core.js"
+
+function diffDisplayRowColor(row: DiffDisplayRow): ThemeColor {
+  switch (row.type) {
+    case "addition":
+      return "toolDiffAdded"
+    case "deletion":
+      return "toolDiffRemoved"
+    case "hunk":
+      return "accent"
+    case "summary":
+    case "unknown":
+      return "muted"
+    default:
+      return "toolDiffContext"
+  }
+}
 
 export class DiffViewerFrame extends DiffViewerCore {
   render(width: number): string[] {
+    // Pre-render: clamp scroll positions before rendering
+    this.clampDiffScroll()
+
     const innerWidth = Math.max(10, width - 2)
     const separatorWidth = 1
     const panelWidth = Math.max(2, innerWidth - separatorWidth)
@@ -131,6 +150,21 @@ export class DiffViewerFrame extends DiffViewerCore {
     return this.theme.fg(color, line)
   }
 
+  /**
+   * Clamp diffScroll to valid range. Call this before renderDiff() to ensure
+   * the scroll position is valid for the current document state.
+   */
+  protected clampDiffScroll(): void {
+    const file = this.document.files[this.selectedFileIndex]
+    if (!file) {
+      this.diffScroll = 0
+      return
+    }
+    const diffRows = formatDiffDisplay(file)
+    const maxScroll = Math.max(0, diffRows.length - (this.viewHeight() - 1))
+    this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll))
+  }
+
   protected renderDiff(width: number, height: number): string[] {
     const file = this.document.files[this.selectedFileIndex]
     if (!file) {
@@ -217,18 +251,7 @@ export class DiffViewerFrame extends DiffViewerCore {
     if (conflictRule?.bold) {
       return this.theme.fg(conflictRule.color, this.theme.bold(line))
     }
-
-    const color =
-      row.type === "addition"
-        ? "toolDiffAdded"
-        : row.type === "deletion"
-          ? "toolDiffRemoved"
-          : row.type === "hunk"
-            ? "accent"
-            : row.type === "summary" || row.type === "unknown"
-              ? "muted"
-              : "toolDiffContext"
-    return this.theme.fg(color, line)
+    return this.theme.fg(diffDisplayRowColor(row), line)
   }
 
   protected emptyDiffMessage(): string {

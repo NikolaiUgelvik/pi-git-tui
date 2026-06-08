@@ -1,0 +1,12 @@
+worktree /repo-main
+HEAD abcdef0
+branch refs/heads/main
+
+worktree /repo-feature
+HEAD 1234567
+branch refs/heads/feature-abc
+
+worktree /repo-detached
+HEAD 9876543
+detached
+

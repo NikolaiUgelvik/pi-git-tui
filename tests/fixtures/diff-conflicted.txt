@@ -1,0 +1,15 @@
+diff --git a/src/module.ts b/src/module.ts
+index 1234567..abcdef0 100644
+--- a/src/module.ts
++++ b/src/module.ts
+@@ -1,5 +1,9 @@
+ export function hello(): string {
+-  const greeting = "Hello"
++<<<<<<< ours
++  const greeting = "Hello"
++||||||| base
++  const greeting = "Hi"
++>>>>>>> theirs
+   const target = "World"
+   return `${greeting}, ${target}!`
+ }

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { setImmediate as tick } from "node:timers/promises"
+import { fileURLToPath } from "node:url"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { listWorktrees, parseWorktreeList } from "../src/git-extras.js"
 import type { DiffDocument, GitExecResult } from "../src/types.js"
@@ -23,20 +26,15 @@ function createPi(handler: (args: string[], cwd: string | undefined) => GitExecR
   return pi as unknown as ExtensionAPI
 }
 
-const worktreePorcelain = [
-  "worktree /repo-main",
-  "HEAD abcdef0",
-  "branch refs/heads/main",
-  "",
-  "worktree /repo-feature",
-  "HEAD 1234567",
-  "branch refs/heads/feature",
-  "",
-  "worktree /repo-detached",
-  "HEAD 9876543",
-  "detached",
-  "",
-].join("\n")
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const sourceDir = __dirname.includes(".tmp-tests") ? __dirname.replace(".tmp-tests/", "") : __dirname
+const fixturesDir = join(sourceDir, "fixtures")
+
+function readFixture(name: string): string {
+  return readFileSync(join(fixturesDir, name), "utf8")
+}
+
+const worktreePorcelain = readFixture("worktree-list.txt")
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -63,7 +61,7 @@ function createWorktreeSwitchPi(calls: ExecCall[]): ExtensionAPI {
     ["rev-parse --show-toplevel", (cwd) => gitResult(`${cwd ?? "/repo-main"}\n`)],
     ["worktree list --porcelain", () => gitResult(worktreePorcelain)],
     ["rev-parse --verify HEAD", () => gitResult("1234567\n")],
-    ["branch --show-current", () => gitResult("feature\n")],
+    ["branch --show-current", () => gitResult("feature-abc\n")],
     ["ls-files --others --exclude-standard -z", () => gitResult("")],
     ["diff --cached --name-only -z", () => gitResult("")],
     ["diff --name-only --diff-filter=U -z", () => gitResult("")],
@@ -80,7 +78,7 @@ function createWorktreeSwitchPi(calls: ExecCall[]): ExtensionAPI {
 test("parseWorktreeList parses porcelain worktree entries", () => {
   assert.deepEqual(parseWorktreeList(worktreePorcelain), [
     { path: "/repo-main", head: "abcdef0", branch: "main" },
-    { path: "/repo-feature", head: "1234567", branch: "feature" },
+    { path: "/repo-feature", head: "1234567", branch: "feature-abc" },
     { path: "/repo-detached", head: "9876543", detached: true },
   ])
 })
@@ -100,7 +98,7 @@ test("listWorktrees runs from repository root and parses porcelain output", asyn
   })
   assert.deepEqual(await listWorktrees(pi, "/repo-main"), [
     { path: "/repo-main", head: "abcdef0", branch: "main" },
-    { path: "/repo-feature", head: "1234567", branch: "feature" },
+    { path: "/repo-feature", head: "1234567", branch: "feature-abc" },
     { path: "/repo-detached", head: "9876543", detached: true },
   ])
   assert.deepEqual(
@@ -138,5 +136,5 @@ test("worktree picker switches only the viewer active path", async () => {
 
   assert.equal(ctx.cwd, "/repo-main")
   assert.ok(calls.some((call) => call.cwd === "/repo-feature" && call.args.join(" ") === "rev-parse --show-toplevel"))
-  assert.match(viewer.render(120).join("\n"), /\/repo-feature \(feature\)/)
+  assert.match(viewer.render(120).join("\n"), /\/repo-feature \(feature-abc\)/)
 })

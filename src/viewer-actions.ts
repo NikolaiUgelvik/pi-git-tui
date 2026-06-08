@@ -1,10 +1,8 @@
 import { matchesKey } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDiff } from "./git.js"
 import { discardFileChanges, initializeGitRepository } from "./git-extras.js"
-import type { DiffFile, HelpContext } from "./types.js"
+import type { ConfirmAction, DiffFile, HelpContext } from "./types.js"
 import { DiffViewerCommandMenu } from "./viewer-command-menu.js"
-
-export type ConfirmAction = "init" | "discard"
 
 export class DiffViewerActions extends DiffViewerCommandMenu {
   protected confirmState: "closed" | "open" | "loading" = "closed"

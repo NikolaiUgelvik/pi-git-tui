@@ -1,0 +1,14 @@
+diff --git a/src/old-name.ts b/src/new-name.ts
+similarity index 91%
+rename from src/old-name.ts
+rename to src/new-name.ts
+index 1234567..abcdef0 100644
+--- a/src/old-name.ts
++++ b/src/new-name.ts
+@@ -1,5 +1,5 @@
+ export function hello(): string {
+-  const greeting = "Hello"
++  const greeting = "Hi"
+   const target = "World"
+   return `${greeting}, ${target}!`
+ }

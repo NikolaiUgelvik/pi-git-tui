@@ -40,6 +40,13 @@ interface MetadataLineRule {
   apply: (line: string, metadata: MetadataSummary) => void
 }
 
+interface FormatDiffState {
+  rows: DiffDisplayRow[]
+  metadata: MetadataSummary
+  hunk?: HunkState
+  suppressBinaryPayload: boolean
+}
+
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/
 
 function cleanMetadataValue(line: string, prefix: string): string {
@@ -197,38 +204,40 @@ function displayRows(rows: DiffDisplayRow[], metadata: MetadataSummary): DiffDis
   return rows.length === 0 ? [{ type: "summary", text: "No displayable diff" }] : rows
 }
 
-export function formatDiffDisplay(file: DiffFile): DiffDisplayRow[] {
-  const rows: DiffDisplayRow[] = []
-  const metadata: MetadataSummary = {}
-  let hunk: HunkState | undefined
-  let suppressBinaryPayload = false
-
-  for (const line of file.lines) {
-    if (suppressBinaryPayload) {
-      continue
-    }
-
-    const hunkRow = line.startsWith("@@") ? parseHunkHeader(line) : undefined
-    if (hunkRow) {
-      rows.push(hunkRow)
-      hunk = hunkState(hunkRow)
-      continue
-    }
-
-    if (line.startsWith("@@")) {
-      rows.push({ type: "unknown", text: line })
-      hunk = undefined
-      continue
-    }
-
-    const row = hunk ? formatHunkLine(line, hunk) : formatOutsideHunk(line, metadata)
-    if (metadata.binaryPatch) {
-      suppressBinaryPayload = true
-    }
-    if (row) {
-      rows.push(row)
-    }
+function appendHunkHeader(state: FormatDiffState, line: string): boolean {
+  if (!line.startsWith("@@")) {
+    return false
   }
+  const hunkRow = parseHunkHeader(line)
+  if (!hunkRow) {
+    state.rows.push({ type: "unknown", text: line })
+    state.hunk = undefined
+    return true
+  }
+  state.rows.push(hunkRow)
+  state.hunk = hunkState(hunkRow)
+  return true
+}
 
-  return displayRows(rows, metadata)
+function appendDisplayLine(state: FormatDiffState, line: string): void {
+  if (state.suppressBinaryPayload || appendHunkHeader(state, line)) {
+    return
+  }
+  const row = state.hunk ? formatHunkLine(line, state.hunk) : formatOutsideHunk(line, state.metadata)
+  state.suppressBinaryPayload = state.metadata.binaryPatch === true
+  if (row) {
+    state.rows.push(row)
+  }
+}
+
+export function formatDiffDisplay(file: DiffFile): DiffDisplayRow[] {
+  const state: FormatDiffState = {
+    rows: [],
+    metadata: {},
+    suppressBinaryPayload: false,
+  }
+  for (const line of file.lines) {
+    appendDisplayLine(state, line)
+  }
+  return displayRows(state.rows, state.metadata)
 }

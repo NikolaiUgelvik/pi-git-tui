@@ -1,0 +1,11 @@
+diff --git a/src/new-file.ts b/src/new-file.ts
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/src/new-file.ts
+@@ -0,0 +1,5 @@
++export function hello(): string {
++  const greeting = "Hello"
++  const target = "World"
++  return `${greeting}, ${target}!`
++}

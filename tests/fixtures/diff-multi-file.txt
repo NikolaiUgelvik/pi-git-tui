@@ -1,0 +1,32 @@
+diff --git a/src/added.ts b/src/added.ts
+new file mode 100644
+index 0000000..aaaaaaa
+--- /dev/null
++++ b/src/added.ts
+@@ -0,0 +1,2 @@
++export const added = true
++console.log(added)
+diff --git a/src/deleted.ts b/src/deleted.ts
+deleted file mode 100644
+index bbbbbbb..0000000
+--- a/src/deleted.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export const deleted = true
+-console.log(deleted)
+diff --git a/src/modified.ts b/src/modified.ts
+index ccccccc..ddddddd 100644
+--- a/src/modified.ts
++++ b/src/modified.ts
+@@ -1,3 +1,3 @@
+ export const value = 1
+-export const name = "old"
++export const name = "new"
+ export const count = 2
+diff --git a/src/renamed.ts b/src/renamed-new.ts
+similarity index 100%
+rename from src/renamed.ts
+rename to src/renamed-new.ts
+diff --git a/assets/image.png b/assets/image.png
+index eeeeeee..fffffff 100644
+Binary files a/assets/image.png and b/assets/image.png differ

@@ -1,0 +1,14 @@
+diff --git a/src/original.ts b/src/copy.ts
+similarity index 88%
+copy from src/original.ts
+copy to src/copy.ts
+index 1234567..abcdef0 100644
+--- a/src/original.ts
++++ b/src/copy.ts
+@@ -1,5 +1,5 @@
+ export function hello(): string {
+-  const greeting = "Hello"
++  const greeting = "Hey"
+   const target = "World"
+   return `${greeting}, ${target}!`
+ }

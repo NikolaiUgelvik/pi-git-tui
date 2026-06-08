@@ -11,6 +11,26 @@ class TestViewerCore extends DiffViewerCore {
   visibleDiffRows(): number {
     return this.viewHeight()
   }
+
+  helpInput(data: string): boolean {
+    return this.handleHelpInput(data)
+  }
+
+  helpOverlay(): string | undefined {
+    return this.helpContext
+  }
+
+  stageToggleInput(data: string): boolean {
+    return this.handleFileStageToggle(data)
+  }
+
+  arrowDelta(data: string): number {
+    return this.arrowScrollDelta(data)
+  }
+
+  status(): { error: string | undefined; statusMessage: string | undefined } {
+    return { error: this.error, statusMessage: this.statusMessage }
+  }
 }
 
 class TestFrameViewer extends DiffViewerFrame {
@@ -47,12 +67,13 @@ const emptyDocument: DiffDocument = {
 function createViewer<T extends DiffViewerCore>(
   Viewer: new (...args: ConstructorParameters<typeof DiffViewerCore>) => T,
   rows: number,
+  document: DiffDocument = emptyDocument,
 ): T {
   return new Viewer(
     {} as ExtensionAPI,
     {} as ExtensionContext,
     theme,
-    emptyDocument,
+    document,
     () => {},
     () => {},
     () => rows,
@@ -145,6 +166,37 @@ test("frame diff renders scrollbar only when pane is wide enough", () => {
 
 test("diff body uses all terminal rows left after overlay margin and chrome", () => {
   assert.equal(viewerForRows(80).visibleDiffRows(), 71)
+})
+
+test("core help input opens and closes contextual help", () => {
+  const viewer = viewerForRows(80)
+
+  assert.equal(viewer.helpInput("?"), true)
+  assert.equal(viewer.helpOverlay(), "viewer")
+  assert.equal(viewer.helpInput("q"), true)
+  assert.equal(viewer.helpOverlay(), undefined)
+})
+
+test("core stage toggle reports unsupported modes without mutating status", () => {
+  const viewer = createViewer(TestViewerCore, 80, {
+    ...emptyDocument,
+    mode: "commit",
+    files: [file("src/example.ts")],
+  })
+
+  assert.equal(viewer.stageToggleInput("\n"), true)
+  assert.deepEqual(viewer.status(), {
+    error: "Staging is only available in the working tree",
+    statusMessage: undefined,
+  })
+})
+
+test("core arrow delta maps vim-style navigation keys", () => {
+  const viewer = viewerForRows(80)
+
+  assert.equal(viewer.arrowDelta("k"), -1)
+  assert.equal(viewer.arrowDelta("j"), 1)
+  assert.equal(viewer.arrowDelta("x"), 0)
 })
 
 test("frame diff renders structured rows and hides raw metadata", () => {
