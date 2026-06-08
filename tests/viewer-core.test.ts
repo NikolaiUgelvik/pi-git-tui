@@ -282,12 +282,14 @@ test("frame diff preserves conflict marker styling in structured rows", () => {
   assert.equal(lines[1], "<error><b>+1 │ <<<<<<< ours</b></error>")
 })
 
-test("overlay merge preserves ANSI styling outside replaced columns", () => {
+test("overlay merge blanks styled base outside replaced columns", () => {
   const blueBaseLine = "\x1b[44mabcdefghijkl\x1b[0m"
   const redOverlay = "\x1b[31mWXYZ\x1b[0m"
 
   const merged = overlayViewer().merge(blueBaseLine, redOverlay)
 
-  assert.ok(merged.includes("\x1b[44mab\x1b[0m"))
-  assert.ok(merged.includes("\x1b[44mghijkl\x1b[0m"))
+  assert.ok(merged.includes("\x1b[44m  \x1b[0m"))
+  assert.ok(merged.includes("\x1b[44m      \x1b[0m"))
+  assert.equal(merged.includes("ab"), false)
+  assert.equal(merged.includes("ghijkl"), false)
 })

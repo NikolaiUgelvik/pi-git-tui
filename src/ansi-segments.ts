@@ -1,6 +1,7 @@
 import { visibleWidth } from "@earendil-works/pi-tui"
 
 const ESCAPE = "\x1b"
+const RESET = `${ESCAPE}[0m`
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 type StyledToken = { kind: "sgr"; code: string } | { kind: "text"; text: string; width: number }
@@ -75,6 +76,19 @@ function appendTextInRange(
   return { result: `${result}${started ? "" : prefix}${token.text}`, started: true }
 }
 
+function closeSgrSegment(segment: string): string {
+  if (!segment.includes(ESCAPE) || segment.endsWith(RESET)) {
+    return segment
+  }
+  return `${segment}${RESET}`
+}
+
+function blankStyledSegment(segment: string): string {
+  return styledTokens(segment)
+    .map((token) => (token.kind === "sgr" ? token.code : " ".repeat(token.width)))
+    .join("")
+}
+
 export function sliceStyledColumns(line: string, startColumn: number, length: number): string {
   const range = { start: startColumn, end: startColumn + length }
   const tracker = new SgrTracker()
@@ -96,4 +110,14 @@ export function sliceStyledColumns(line: string, startColumn: number, length: nu
   }
 
   return result
+}
+
+export function blankStyledColumns(line: string, startColumn: number, length: number): string {
+  if (length <= 0) {
+    return ""
+  }
+
+  const blankSegment = blankStyledSegment(sliceStyledColumns(line, startColumn, length))
+  const padding = " ".repeat(Math.max(0, length - visibleWidth(blankSegment)))
+  return closeSgrSegment(`${blankSegment}${padding}`)
 }
