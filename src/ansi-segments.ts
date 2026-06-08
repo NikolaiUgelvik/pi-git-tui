@@ -112,6 +112,14 @@ export function sliceStyledColumns(line: string, startColumn: number, length: nu
   return result
 }
 
+export function copyStyledColumns(line: string, startColumn: number, length: number): string {
+  if (length <= 0) {
+    return ""
+  }
+
+  return closeSgrSegment(sliceStyledColumns(line, startColumn, length))
+}
+
 export function blankStyledColumns(line: string, startColumn: number, length: number): string {
   if (length <= 0) {
     return ""

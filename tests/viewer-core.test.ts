@@ -293,3 +293,15 @@ test("overlay merge blanks styled base outside replaced columns", () => {
   assert.equal(merged.includes("ab"), false)
   assert.equal(merged.includes("ghijkl"), false)
 })
+
+test("overlay merge preserves styled outer frame borders", () => {
+  const baseLine = "\x1b[34m│\x1b[0m\x1b[44mabcdefghij\x1b[0m\x1b[34m│\x1b[0m"
+  const redOverlay = "\x1b[31mWXYZ\x1b[0m"
+
+  const merged = overlayViewer().merge(baseLine, redOverlay)
+
+  assert.ok(merged.includes("\x1b[34m│\x1b[0m"))
+  assert.ok(merged.includes("\x1b[31mWXYZ\x1b[0m"))
+  assert.equal(merged.includes("ab"), false)
+  assert.equal(merged.includes("ghij"), false)
+})

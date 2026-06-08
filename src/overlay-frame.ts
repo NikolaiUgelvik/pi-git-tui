@@ -39,7 +39,7 @@ export function renderSearchOverlayFrame(
     row(` ${theme.fg("dim", hint)}`),
     row(searchLine),
     row(""),
-    ...bodyRows,
+    ...bodyRows.map(row),
     row(""),
     border("bottom"),
   ]
