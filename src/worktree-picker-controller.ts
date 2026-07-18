@@ -4,8 +4,8 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent"
 import { FilterableListState } from "./filterable-list-state.js"
-import { createOverlayFrame } from "./overlay-frame.js"
-import { handleFilterableListInput, isCancelInput, resetFilterableList } from "./overlay-input.js"
+import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
+import { handleFilterableListControllerInput, resetFilterableList } from "./overlay-input.js"
 import type { WorktreeSummary } from "./types.js"
 
 // --- Types ---
@@ -55,16 +55,13 @@ export class WorktreePickerController {
   // --- Input handling ---
 
   public handleInput(data: string): void {
-    if (this.state === "loading") {
-      return
-    }
-    if (isCancelInput(data)) {
-      this.close()
-      return
-    }
-    handleFilterableListInput(data, this.list, (worktree) => this._callbacks.onSwitch(worktree))
-    this.list.clampSelection()
-    this._callbacks.onRequestRender()
+    handleFilterableListControllerInput(data, {
+      state: this.state,
+      list: this.list,
+      onEnter: (worktree) => this._callbacks.onSwitch(worktree),
+      onClose: () => this.close(),
+      onRequestRender: this._callbacks.onRequestRender,
+    })
   }
 
   // --- Search helpers ---
@@ -90,30 +87,37 @@ export class WorktreePickerController {
   // --- Rendering (pure) ---
 
   public renderOverlayLines(baseLineCount: number, width: number, theme: Theme): string[] {
-    const { maxItems, row, border } = createOverlayFrame(baseLineCount, width, theme)
-
-    const lines: string[] = [
-      border("top"),
-      row(` ${theme.fg("accent", theme.bold("Worktrees"))}`),
-      row(` ${theme.fg("dim", "type search • ↑↓ navigate • enter select • ? help • esc cancel")}`),
-      ...this.renderBodyRows(maxItems, theme),
-      row(""),
-      border("bottom"),
-    ]
-    return lines
+    const frame = createOverlayFrame(baseLineCount, width, theme)
+    const hint = frame.compact
+      ? "↑↓ move • Enter select • Esc close • F1"
+      : "type search • ↑↓ navigate • enter select • F1 help • esc cancel"
+    return renderOverlayFrame(
+      frame,
+      ` ${theme.fg("accent", theme.bold("Worktrees"))}`,
+      ` ${theme.fg("dim", hint)}`,
+      this.renderBodyRows(frame.maxItems, frame.innerWidth, frame.compact, theme),
+    )
   }
 
-  private renderBodyRows(maxItems: number, theme: Theme): string[] {
+  private renderBodyRows(maxItems: number, innerWidth: number, compact: boolean, theme: Theme): string[] {
     if (this.state === "loading") {
-      return ["", ` ${theme.fg("warning", this.loadingMessage ?? "Loading…")}`]
+      return [` ${theme.fg("warning", this.loadingMessage ?? "Loading…")}`]
     }
-    return [this.renderSearchLine(theme), "", ...this.renderWorktreeItems(maxItems, theme)]
+    return [
+      this.renderSearchLine(innerWidth, theme),
+      ...(compact ? [] : [""]),
+      ...this.renderWorktreeItems(maxItems, theme),
+    ]
   }
 
-  private renderSearchLine(theme: Theme): string {
-    const query =
-      this.list.searchQuery.length > 0 ? `${this.list.searchQuery}▌` : theme.fg("muted", "type to filter worktrees")
-    return ` Search: ${query}`
+  private renderSearchLine(innerWidth: number, theme: Theme): string {
+    const prefix = " Search: "
+    const field = this.list.searchField.render(
+      Math.max(1, innerWidth - prefix.length),
+      this.list.searchField.focused,
+      theme.fg("muted", "type to filter worktrees"),
+    )
+    return `${prefix}${field}`
   }
 
   private renderWorktreeItems(maxItems: number, theme: Theme): string[] {

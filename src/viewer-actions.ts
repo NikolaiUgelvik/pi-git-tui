@@ -1,46 +1,71 @@
-import { matchesKey } from "@earendil-works/pi-tui"
-import { loadWorkingTreeDiff } from "./git.js"
+import {
+  type ConfirmationPrompt,
+  confirmationBodyLines,
+  confirmationDecision,
+  confirmationHint,
+  discardConfirmationPrompt,
+  initializationConfirmationPrompt,
+} from "./confirmation-prompt.js"
 import { discardFileChanges, initializeGitRepository } from "./git-extras.js"
+import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
+import type { SingleLineTextField } from "./single-line-text-field.js"
 import type { ConfirmAction, DiffFile, HelpContext } from "./types.js"
 import { DiffViewerCommandMenu } from "./viewer-command-menu.js"
 
 export class DiffViewerActions extends DiffViewerCommandMenu {
-  protected confirmState: "closed" | "open" | "loading" = "closed"
   protected confirmAction: ConfirmAction | undefined
   protected confirmFile: DiffFile | undefined
+  protected confirmState: "closed" | "open" | "loading" = "closed"
+
+  constructor(...args: ConstructorParameters<typeof DiffViewerCommandMenu>) {
+    super(...args)
+    this.featureOverlays.register("confirmation", {
+      isActive: () => this.confirmState !== "closed",
+      activeTextField: () => undefined,
+      helpContext: () => "confirmDialog",
+      render: (baseLines, width) => this.renderConfirmOverlay(baseLines, width),
+      handleInput: (data) => this.handleConfirmInput(data),
+      handleOpen: (data) => this.handleOpenInitDialogInput(data) || this.handleOpenDiscardDialogInput(data),
+      close: () => this.closeConfirmDialog(),
+    })
+  }
+
+  protected override activeTextField(): SingleLineTextField | undefined {
+    return this.featureOverlays.hasActive() ? this.featureOverlays.activeTextField() : super.activeTextField()
+  }
 
   protected featureHelpContext(): HelpContext | undefined {
-    return this.confirmState !== "closed" ? "confirmDialog" : undefined
+    return this.featureOverlays.helpContext()
   }
 
   protected hasFeatureOverlay(): boolean {
-    return this.confirmState !== "closed"
+    return this.featureOverlays.hasActive()
   }
 
   protected renderFeatureOverlay(baseLines: string[], width: number): string[] {
-    return this.renderConfirmOverlay(baseLines, width)
+    return this.featureOverlays.render(baseLines, width)
   }
 
   protected handleFeatureOverlayInput(data: string): boolean {
-    if (this.confirmState === "closed") {
-      return false
-    }
-    this.handleConfirmInput(data)
-    return true
+    return this.featureOverlays.handleInput(data)
   }
 
   protected handleFeatureOpenInput(data: string): boolean {
-    return this.handleOpenInitDialogInput(data) || this.handleOpenDiscardDialogInput(data)
+    return this.featureOverlays.handleOpen(data)
   }
 
   protected handleOpenInitDialogInput(data: string): boolean {
     if (data !== "I") {
       return false
     }
-    if (this.document.repositoryState !== "missing") {
+    if (!this.requireViewerAction("initialize")) {
+      return true
+    }
+    if (!this.canStartForegroundOperation("initializing the repository")) {
       return true
     }
     this.error = undefined
+    this.errorDetails = undefined
     this.statusMessage = undefined
     this.confirmAction = "init"
     this.confirmFile = undefined
@@ -53,17 +78,18 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
     if (data !== "D") {
       return false
     }
-    if (this.document.mode !== "working") {
-      this.error = "Discard is only available in the working tree"
-      this.statusMessage = undefined
-      this.requestRender()
+    if (!this.requireViewerAction("discard")) {
       return true
     }
-    const file = this.document.files[this.selectedFileIndex]
+    if (!this.canStartForegroundOperation("discarding changes")) {
+      return true
+    }
+    const file = this.files[this.selectedFileIndex]
     if (!file) {
       return true
     }
     this.error = undefined
+    this.errorDetails = undefined
     this.statusMessage = undefined
     this.confirmAction = "discard"
     this.confirmFile = file
@@ -73,58 +99,82 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
   }
 
   protected handleConfirmInput(data: string): void {
+    const decision = confirmationDecision(data)
+    if (decision === "cancel") {
+      const wasLoading = this.confirmState === "loading"
+      this.closeConfirmDialog()
+      if (wasLoading) {
+        this.cancelActiveOperation()
+      }
+      return
+    }
     if (this.confirmState === "loading") {
       return
     }
-    if (this.isConfirmCancel(data)) {
-      this.closeConfirmDialog()
-      return
-    }
-    if (this.isEnter(data)) {
+    if (decision === "confirm") {
       this.runConfirmedAction().catch((error: unknown) => this.showAsyncError(error))
     }
-  }
-
-  protected isConfirmCancel(data: string): boolean {
-    return matchesKey(data, "escape") || this.isKey(data, "q")
   }
 
   protected closeConfirmDialog(): void {
     this.confirmState = "closed"
     this.confirmAction = undefined
     this.confirmFile = undefined
+    this.loadingMessage = undefined
     this.requestRender()
   }
 
   protected async runConfirmedAction(): Promise<void> {
     const action = this.confirmAction
+    const file = this.confirmFile
+    const viewerAction = action === "init" ? "initialize" : "discard"
+    if (!this.requireViewerAction(viewerAction)) {
+      this.closeConfirmDialog()
+      return
+    }
+    const cwd = this.activePath()
+    const selection = this.documentState.captureSelection(file?.path)
     this.confirmState = "loading"
     this.loadingMessage = this.confirmLoadingMessage()
-    this.error = undefined
-    this.statusMessage = undefined
     this.requestRender()
-    try {
-      this.statusMessage = await this.executeConfirmedAction(action)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
+    const outcome = await this.runMutation({
+      label: action === "init" ? "initialize repository" : "discard changes",
+      runningMessage: this.loadingMessage,
+      mutate: ({ signal }) => this.executeConfirmedAction(action, file, cwd, signal),
+      successMessage: (message) => message,
+      refresh: this.workingTreeRefreshIntent(cwd, selection),
+      reconcileOnFailure: true,
+    })
+
+    if (outcome.kind === "mutationFailed") {
+      this.confirmAction = action
+      this.confirmFile = file
+      this.confirmState = "open"
+    } else if (outcome.kind === "rejected") {
+      this.confirmAction = action
+      this.confirmFile = file
+      this.confirmState = "open"
+      this.showOperationRejection("confirm action")
+    } else {
       this.confirmState = "closed"
       this.confirmAction = undefined
       this.confirmFile = undefined
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      this.confirmState = "open"
-    } finally {
-      this.loadingMessage = undefined
-      this.requestRender()
     }
+    this.loadingMessage = undefined
+    this.requestRender()
   }
 
-  protected executeConfirmedAction(action: ConfirmAction | undefined): Promise<string> {
+  protected executeConfirmedAction(
+    action: ConfirmAction | undefined,
+    file: DiffFile | undefined,
+    cwd: string,
+    signal: AbortSignal,
+  ): Promise<string> {
     if (action === "init") {
-      return initializeGitRepository(this.pi, this.activePath(), this.ctx.signal)
+      return initializeGitRepository(this.pi, cwd, signal)
     }
-    if (action === "discard" && this.confirmFile) {
-      return discardFileChanges(this.pi, this.activePath(), this.confirmFile, this.ctx.signal)
+    if (action === "discard" && file) {
+      return discardFileChanges(this.pi, cwd, file, signal)
     }
     return Promise.reject(new Error("No confirmed action selected"))
   }
@@ -137,38 +187,30 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
 
   protected renderConfirmOverlay(baseLines: string[], width: number): string[] {
     const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const row = (content: string) => this.commitPickerOverlayRow(content, layout.overlayWidth)
-    const overlay = [
-      this.commitPickerBorder("top", layout.overlayWidth),
-      row(` ${this.theme.fg("accent", this.theme.bold(this.confirmTitle()))}`),
-      row(` ${this.theme.fg("dim", "Enter OK • Esc/q Cancel • ? help")}`),
-      row(""),
-      ...this.confirmBodyRows(row),
-      row(""),
-      this.commitPickerBorder("bottom", layout.overlayWidth),
-    ]
+    const frame = createOverlayFrame(baseLines.length, width, this.theme)
+    const prompt = this.confirmPrompt()
+    const title = this.confirmState === "loading" ? (this.loadingMessage ?? "Working…") : prompt.title
+    const hint = this.confirmState === "loading" ? "Esc: Cancel" : confirmationHint(prompt)
+    const body =
+      this.confirmState === "loading"
+        ? [` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`]
+        : confirmationBodyLines(prompt, this.theme, {
+            compact: frame.compact,
+            maxRows: frame.bodyRows,
+            width: frame.innerWidth,
+          })
+    const overlay = renderOverlayFrame(
+      frame,
+      ` ${this.theme.fg("accent", this.theme.bold(title))}`,
+      ` ${this.theme.fg("dim", hint)}`,
+      body,
+    )
     return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
   }
 
-  protected confirmTitle(): string {
-    if (this.confirmState === "loading") {
-      return this.loadingMessage ?? "Working…"
-    }
-    return this.confirmAction === "init" ? "Initialize git repository" : "Discard selected file changes"
-  }
-
-  protected confirmBodyRows(row: (content: string) => string): string[] {
-    if (this.confirmState === "loading") {
-      return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
-    }
-    if (this.confirmAction === "init") {
-      return [row(` Initialize git repo in ${this.activePath()}?`), row(""), row(" [ OK ]   [ Cancel ]")]
-    }
-    return [
-      row(` Discard all staged and unstaged changes for ${this.confirmFile?.path ?? "file"}?`),
-      row(this.theme.fg("warning", " This cannot be undone.")),
-      row(""),
-      row(" [ OK ]   [ Cancel ]"),
-    ]
+  protected confirmPrompt(): ConfirmationPrompt {
+    return this.confirmAction === "init"
+      ? initializationConfirmationPrompt(this.activePath())
+      : discardConfirmationPrompt(this.confirmFile)
   }
 }

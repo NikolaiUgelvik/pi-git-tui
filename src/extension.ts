@@ -1,9 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import type { KeyId } from "@earendil-works/pi-tui"
-import { emptyDocument } from "./diff-parser.js"
-import { loadWorkingTreeDiff } from "./git.js"
-import type { DiffDocument } from "./types.js"
+import { loadWorkingTreeDocument } from "./git.js"
 import { DiffViewer } from "./viewer.js"
+import { failedViewerDocument, loadedViewerDocument, type ViewerInitialDocument } from "./viewer-document-state.js"
 
 const diffDescription = "Open an interactive git diff and commit viewer"
 
@@ -11,18 +10,18 @@ export function getDiffShortcut(platform: NodeJS.Platform = process.platform): K
   return platform === "darwin" ? "super+shift+g" : "ctrl+shift+g"
 }
 
-async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+export async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   if (!ctx.hasUI) {
     ctx.ui.notify("/diff requires interactive mode", "error")
     return
   }
 
-  let initialDocument: DiffDocument
+  const request = { kind: "working" as const, cwd: ctx.cwd }
+  let initialDocument: ViewerInitialDocument
   try {
-    initialDocument = await loadWorkingTreeDiff(pi, ctx)
+    initialDocument = loadedViewerDocument(await loadWorkingTreeDocument(pi, ctx), request)
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    initialDocument = emptyDocument("Failed to load git diff", message, "working")
+    initialDocument = failedViewerDocument(request, error)
   }
 
   await ctx.ui.custom<void>(
@@ -38,6 +37,8 @@ async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): Promise<
       )
       void viewer.handleInput
       void viewer.invalidate
+      void viewer.focused
+      viewer.focused = false
       return viewer
     },
     {

@@ -1,18 +1,65 @@
-import { matchesKey } from "@earendil-works/pi-tui"
-import { generateCommitMessage, loadWorkingTreeDiff, runGitCommit } from "./git.js"
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui"
+import { workingTreeHasConflicts } from "./diff-document.js"
+import { generateCommitMessage, runGitCommit } from "./git.js"
+import { createOverlayFrame, type OverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
+import { SingleLineTextField } from "./single-line-text-field.js"
+import type { WorkingTreeDocument } from "./types.js"
+import { viewerActionAvailability } from "./viewer-action-policy.js"
 import { DiffViewerCommitPicker } from "./viewer-commit-picker.js"
+import { isCommitGenerationInput } from "./viewer-key-input.js"
+
+function conflictCommitReason(document: WorkingTreeDocument): string | undefined {
+  return workingTreeHasConflicts(document) ? "Resolve conflicts before committing" : undefined
+}
+
+function amendCommitReason(document: WorkingTreeDocument, amend: boolean): string | undefined {
+  if (!amend) {
+    return
+  }
+  return document.headState === "unborn" ? "There is no commit to amend" : undefined
+}
+
+function normalCommitReason(document: WorkingTreeDocument, amend: boolean): string | undefined {
+  if (amend) {
+    return
+  }
+  return document.staged.stats.files === 0 ? "No staged changes to commit" : undefined
+}
 
 export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
+  private commitDialogEpoch = 0
+  protected readonly commitMessageField = new SingleLineTextField("", "commit message")
+
+  protected get commitMessage(): string {
+    return this.commitMessageField.value
+  }
+
+  protected set commitMessage(value: string) {
+    this.commitMessageField.setValue(value, "end")
+  }
+
+  protected override activeTextField(): SingleLineTextField | undefined {
+    return this.commitDialogState === "open" ? this.commitMessageField : super.activeTextField()
+  }
+
   protected openCommitDialog(): void {
+    if (!this.requireViewerAction("commit")) {
+      return
+    }
+    if (this.document.mode === "working") {
+      this.documentState.setWorkingTreeView("staged")
+    }
     this.error = undefined
+    this.errorDetails = undefined
     this.statusMessage = undefined
-    this.commitMessageCaret = this.commitMessageLength()
+    this.commitMessageField.setValue(this.commitMessage, "end")
+    this.commitDialogEpoch += 1
     this.commitDialogState = "open"
     this.requestRender()
   }
 
   protected handleCommitDialogInput(data: string): void {
-    if (this.commitDialogState === "loading" || this.closeCommitDialogOnEscape(data)) {
+    if (this.closeCommitDialogOnEscape(data) || this.commitDialogState === "loading") {
       return
     }
     this.updateCommitDialogInput(data)
@@ -23,7 +70,18 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     if (!matchesKey(data, "escape")) {
       return false
     }
-    this.commitDialogState = "closed"
+    const wasLoading = this.commitDialogState === "loading"
+    const mutationMayHaveRun = ["commit", "amend commit"].includes(this.operationSnapshot().label ?? "")
+    this.commitDialogEpoch += 1
+    if (mutationMayHaveRun) {
+      this.clearCommittedDialog()
+    } else {
+      this.commitDialogState = "closed"
+    }
+    this.loadingMessage = undefined
+    if (wasLoading) {
+      this.cancelActiveOperation()
+    }
     this.requestRender()
     return true
   }
@@ -32,35 +90,14 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     const handlers = [
       () => this.handleCommitAmendToggle(data),
       () => this.handleCommitMessageGeneration(data),
-      () => this.handleCommitMessageCaretMove(data),
-      () => this.handleCommitMessageBackspace(data),
-      () => this.handleCommitMessageDelete(data),
       () => this.handleCommitSubmission(data),
-      () => this.handleCommitMessageText(data),
+      () => this.commitMessageField.handleInput(data, "editor"),
     ]
     for (const handler of handlers) {
       if (handler()) {
         return
       }
     }
-  }
-
-  protected commitMessageChars(): string[] {
-    return [...this.commitMessage]
-  }
-
-  protected commitMessageLength(): number {
-    return this.commitMessageChars().length
-  }
-
-  protected clampCommitMessageCaret(chars = this.commitMessageChars()): number {
-    this.commitMessageCaret = Math.max(0, Math.min(this.commitMessageCaret, chars.length))
-    return this.commitMessageCaret
-  }
-
-  protected setCommitMessageChars(chars: string[]): void {
-    this.commitMessage = chars.join("")
-    this.clampCommitMessageCaret(chars)
   }
 
   protected handleCommitAmendToggle(data: string): boolean {
@@ -72,58 +109,23 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
   }
 
   protected handleCommitMessageGeneration(data: string): boolean {
-    if (data !== "*") {
+    if (!isCommitGenerationInput(data)) {
       return false
     }
-    this.generateCommitMessageIntoDialog().catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleCommitMessageCaretMove(data: string): boolean {
-    const chars = this.commitMessageChars()
-    this.clampCommitMessageCaret(chars)
-    if (matchesKey(data, "left")) {
-      this.commitMessageCaret = Math.max(0, this.commitMessageCaret - 1)
+    if (this.document.mode !== "working" || this.document.staged.stats.files === 0) {
+      this.error = "Stage changes before generating a commit message"
+      this.errorDetails = this.error
+      this.statusMessage = undefined
       return true
     }
-    if (matchesKey(data, "right")) {
-      this.commitMessageCaret = Math.min(chars.length, this.commitMessageCaret + 1)
+    if (workingTreeHasConflicts(this.document)) {
+      this.error = "Resolve conflicts before generating a commit message"
+      this.errorDetails = this.error
+      this.statusMessage = undefined
       return true
     }
-    if (matchesKey(data, "home") || matchesKey(data, "ctrl+a")) {
-      this.commitMessageCaret = 0
-      return true
-    }
-    if (matchesKey(data, "end") || matchesKey(data, "ctrl+e")) {
-      this.commitMessageCaret = chars.length
-      return true
-    }
-    return false
-  }
-
-  protected handleCommitMessageBackspace(data: string): boolean {
-    if (!this.isBackspace(data)) {
-      return false
-    }
-    const chars = this.commitMessageChars()
-    const caret = this.clampCommitMessageCaret(chars)
-    if (caret > 0) {
-      chars.splice(caret - 1, 1)
-      this.commitMessageCaret = caret - 1
-      this.setCommitMessageChars(chars)
-    }
-    return true
-  }
-
-  protected handleCommitMessageDelete(data: string): boolean {
-    if (!matchesKey(data, "delete") && data !== "\x1b[3~") {
-      return false
-    }
-    const chars = this.commitMessageChars()
-    const caret = this.clampCommitMessageCaret(chars)
-    if (caret < chars.length) {
-      chars.splice(caret, 1)
-      this.setCommitMessageChars(chars)
+    if (this.canStartForegroundOperation("generating a commit message")) {
+      this.generateCommitMessageIntoDialog().catch((error: unknown) => this.showAsyncError(error))
     }
     return true
   }
@@ -135,107 +137,167 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
     const message = this.commitMessage.trim()
     if (!message) {
       this.error = "Commit message is empty"
+      this.errorDetails = this.error
       this.statusMessage = undefined
       return true
     }
-    this.commitStagedChanges(message).catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleCommitMessageText(data: string): boolean {
-    if (!this.isPrintableInput(data)) {
-      return false
+    const unavailable = this.commitUnavailableReason(this.commitAmend)
+    if (unavailable) {
+      this.error = unavailable
+      this.errorDetails = unavailable
+      this.statusMessage = undefined
+      return true
     }
-    const chars = this.commitMessageChars()
-    const input = [...data]
-    const caret = this.clampCommitMessageCaret(chars)
-    chars.splice(caret, 0, ...input)
-    this.commitMessageCaret = caret + input.length
-    this.setCommitMessageChars(chars)
+    if (this.canStartForegroundOperation("committing staged changes")) {
+      this.commitStagedChanges(message).catch((error: unknown) => this.showAsyncError(error))
+    }
     return true
   }
 
   protected async generateCommitMessageIntoDialog(): Promise<void> {
+    const epoch = this.commitDialogEpoch
     this.commitDialogState = "loading"
     this.loadingMessage = "Generating commit message…"
-    this.error = undefined
-    this.statusMessage = undefined
     this.requestRender()
-    try {
-      this.commitMessage = await generateCommitMessage(this.pi, this.activeContext())
-      this.commitMessageCaret = this.commitMessageLength()
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.commitDialogState = "open"
-      this.loadingMessage = undefined
-      this.requestRender()
+    const outcome = await this.runLoad<string>({
+      label: "commit message generation",
+      runningMessage: "Generating commit message…",
+      load: ({ signal }) => this.requestGeneratedCommitMessage(signal),
+      apply: (message) => {
+        if (epoch !== this.commitDialogEpoch || this.commitDialogState === "closed") {
+          return
+        }
+        this.commitMessageField.setValue(message, "end")
+      },
+    })
+    if (epoch !== this.commitDialogEpoch) {
+      return
     }
+    this.commitDialogState = outcome.kind === "cancelled" || outcome.kind === "stale" ? "closed" : "open"
+    this.loadingMessage = undefined
+    this.requestRender()
+  }
+
+  protected requestGeneratedCommitMessage(signal: AbortSignal): Promise<string> {
+    return generateCommitMessage(this.pi, this.activeContext(signal), { signal })
   }
 
   protected async commitStagedChanges(message: string): Promise<void> {
+    if (!this.requireViewerAction("commit")) {
+      this.commitDialogState = "closed"
+      return
+    }
+    const unavailable = this.commitUnavailableReason(this.commitAmend)
+    if (unavailable) {
+      this.error = unavailable
+      this.errorDetails = unavailable
+      this.statusMessage = undefined
+      this.commitDialogState = "open"
+      this.requestRender()
+      return
+    }
+    const epoch = this.commitDialogEpoch
+    const cwd = this.activePath()
+    const amend = this.commitAmend
+    const selection = this.documentState.captureSelection()
     this.commitDialogState = "loading"
     this.loadingMessage = "Committing staged changes…"
-    this.error = undefined
-    this.statusMessage = undefined
     this.requestRender()
-    try {
-      const output = await runGitCommit(this.pi, this.activePath(), message, this.ctx.signal, this.commitAmend)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.commitMessage = ""
-      this.commitMessageCaret = 0
-      this.commitAmend = false
-      this.commitDialogState = "closed"
-      this.statusMessage = output
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      this.commitDialogState = "open"
-    } finally {
-      this.loadingMessage = undefined
-      this.requestRender()
+    const outcome = await this.runMutation({
+      label: amend ? "amend commit" : "commit",
+      runningMessage: "Committing staged changes…",
+      mutate: ({ signal }) => runGitCommit(this.pi, cwd, message, signal, amend),
+      successMessage: (output) => output,
+      refresh: this.workingTreeRefreshIntent(cwd, selection),
+      reconcileOnFailure: true,
+    })
+    if (epoch !== this.commitDialogEpoch) {
+      return
     }
+    if (outcome.kind === "mutationFailed") {
+      this.commitDialogState = "open"
+    } else if (outcome.kind === "rejected") {
+      this.commitDialogState = "open"
+      this.showOperationRejection("commit")
+    } else {
+      this.clearCommittedDialog()
+    }
+    this.loadingMessage = undefined
+    this.requestRender()
+  }
+
+  protected commitUnavailableReason(amend: boolean): string | undefined {
+    const availability = viewerActionAvailability(this.document, "commit")
+    if (!availability.available) {
+      return availability.reason
+    }
+    if (this.document.mode !== "working") {
+      return "Return to the working tree with W before committing changes."
+    }
+    const reasons = [
+      conflictCommitReason(this.document),
+      amendCommitReason(this.document, amend),
+      normalCommitReason(this.document, amend),
+    ]
+    return reasons.find((reason) => reason !== undefined)
+  }
+
+  private clearCommittedDialog(): void {
+    this.commitMessageField.setValue("", "end")
+    this.commitAmend = false
+    this.commitDialogState = "closed"
   }
 
   protected renderCommitDialogOverlay(baseLines: string[], width: number): string[] {
     const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const overlay = this.commitDialogOverlayLines(layout.overlayWidth)
+    const frame = createOverlayFrame(baseLines.length, width, this.theme)
+    const overlay = this.commitDialogOverlayLines(frame)
     return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
   }
 
-  protected commitDialogOverlayLines(overlayWidth: number): string[] {
-    const row = (content: string) => this.commitPickerOverlayRow(content, overlayWidth)
-    return [
-      this.commitPickerBorder("top", overlayWidth),
-      row(` ${this.theme.fg("accent", this.theme.bold(this.commitDialogTitle()))}`),
-      row(
-        ` ${this.theme.fg("dim", "type message • Ctrl+X amend • ←/→ move • * generate • enter commit • ? help • esc cancel")}`,
-      ),
-      row(""),
-      ...this.commitDialogBodyRows(row),
-      row(""),
-      this.commitPickerBorder("bottom", overlayWidth),
-    ]
+  protected commitDialogOverlayLines(frame: OverlayFrame): string[] {
+    const hint = frame.compact
+      ? "Ctrl+X amend • Ctrl+G generate • Enter commit • Esc"
+      : "type message • Ctrl+X amend • ←/→ move • Ctrl+G generate • enter commit • F1 help • esc cancel"
+    return renderOverlayFrame(
+      frame,
+      ` ${this.theme.fg("accent", this.theme.bold(this.commitDialogTitle()))}`,
+      ` ${this.theme.fg("dim", hint)}`,
+      this.commitDialogBodyRows(frame.innerWidth),
+    )
   }
 
   protected commitDialogTitle(): string {
-    return this.commitAmend ? "Amend last commit" : "Commit staged changes"
+    if (!this.commitAmend) {
+      return "Commit staged changes"
+    }
+    return this.stagedFileCount() === 0 ? "Amend last commit · message/tree amend only" : "Amend last commit"
   }
 
-  protected commitDialogBodyRows(row: (content: string) => string): string[] {
+  protected commitDialogBodyRows(innerWidth: number): string[] {
     if (this.commitDialogState === "loading") {
-      return [row(` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`)]
+      return [` ${this.theme.fg("warning", this.loadingMessage ?? "Working…")}`]
     }
     const mode = this.commitAmend ? this.theme.fg("warning", " amend") : this.theme.fg("muted", " normal")
-    return [row(` Mode:${mode}`), row(` Message: ${this.renderCommitMessageInput()}`)]
+    const stats =
+      this.document.mode === "working" ? this.document.staged.stats : { files: 0, additions: 0, deletions: 0 }
+    const staged = `${stats.files} file${stats.files === 1 ? "" : "s"} • +${stats.additions} −${stats.deletions}`
+    return [
+      ` Mode:${mode}`,
+      ` Staged: ${this.theme.fg(stats.files > 0 ? "accent" : "warning", staged)}`,
+      ` Message: ${this.renderCommitMessageInput(Math.max(1, innerWidth - visibleWidth(" Message: ")))}`,
+    ]
   }
 
-  protected renderCommitMessageInput(): string {
-    const chars = this.commitMessageChars()
-    const caret = this.clampCommitMessageCaret(chars)
-    if (chars.length === 0) {
-      return `▌${this.theme.fg("muted", "commit message")}`
-    }
-    return `${chars.slice(0, caret).join("")}▌${chars.slice(caret).join("")}`
+  protected stagedFileCount(): number {
+    return this.document.mode === "working" ? this.document.staged.stats.files : 0
+  }
+
+  protected renderCommitMessageInput(width: number): string {
+    return this.commitMessageField.render(
+      width,
+      this.commitMessageField.focused,
+      this.theme.fg("muted", "commit message"),
+    )
   }
 }

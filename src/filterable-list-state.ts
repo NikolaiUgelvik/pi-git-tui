@@ -1,4 +1,5 @@
 import { matchesKey } from "@earendil-works/pi-tui"
+import { SingleLineTextField } from "./single-line-text-field.js"
 
 // --- Search utilities ---
 
@@ -130,7 +131,7 @@ function isPageDown(data: string): boolean {
  * Manages search query, selection, scroll, and filtered items.
  */
 export class FilterableListState<T> {
-  public searchQuery = ""
+  public readonly searchField = new SingleLineTextField()
   public selectedIndex = 0
   public scroll = 0
 
@@ -140,6 +141,14 @@ export class FilterableListState<T> {
     /** Function that produces a searchable string for each item. */
     public searchText: (item: T) => string,
   ) {}
+
+  get searchQuery(): string {
+    return this.searchField.value
+  }
+
+  set searchQuery(value: string) {
+    this.searchField.setValue(value, "end")
+  }
 
   /** Items filtered by the current search query. */
   get filteredItems(): T[] {
@@ -171,16 +180,24 @@ export class FilterableListState<T> {
     this.selectedIndex = Math.max(0, Math.min(Math.max(0, this.filteredCount - 1), this.selectedIndex))
   }
 
-  /** Append a printable character to the search query and reset scroll. */
-  public appendSearchChar(char: string): void {
-    this.searchQuery += char
-    this.reset()
+  /** Route editing input to the search field and reset list position on changes. */
+  public handleSearchInput(data: string): boolean {
+    const before = this.searchQuery
+    const handled = this.searchField.handleInput(data, "search")
+    if (this.searchQuery !== before) {
+      this.reset()
+    }
+    return handled
   }
 
-  /** Remove the last character from the search query and reset scroll. */
+  /** Append printable text to the search query and reset scroll. */
+  public appendSearchChar(char: string): void {
+    this.handleSearchInput(char)
+  }
+
+  /** Remove the previous grapheme from the search query and reset scroll. */
   public backspaceSearch(): void {
-    this.searchQuery = [...this.searchQuery].slice(0, -1).join("")
-    this.reset()
+    this.handleSearchInput("\x7f")
   }
 
   /** Move selection with a navigation key. Returns true if handled. */

@@ -1,12 +1,12 @@
-import { loadWorkingTreeDiff } from "./git.js"
+import { matchesKey } from "@earendil-works/pi-tui"
 import { listWorktrees, type WorktreeSummary } from "./git-extras.js"
-import type { HelpContext } from "./types.js"
 import { DiffViewerStashPicker } from "./viewer-stash-picker.js"
 import { WorktreePickerController } from "./worktree-picker-controller.js"
 
 export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
-  protected worktreeState: "closed" | "loading" | "open" = "closed"
   protected worktreePickerController: WorktreePickerController
+  protected worktreeState: "closed" | "loading" | "open" = "closed"
+  private worktreeRequest = 0
 
   constructor(...args: ConstructorParameters<typeof DiffViewerStashPicker>) {
     super(...args)
@@ -15,106 +15,126 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
         void this.switchToWorktree(worktree).catch((error: unknown) => this.showAsyncError(error))
       },
       onClose: () => {
+        this.worktreeRequest += 1
         this.worktreeState = "closed"
       },
       onRequestRender: () => this.requestRender(),
     })
-  }
-
-  protected override featureHelpContext(): HelpContext | undefined {
-    if (this.worktreeState !== "closed") {
-      return "worktreePicker"
-    }
-    return super.featureHelpContext()
-  }
-
-  protected override hasFeatureOverlay(): boolean {
-    return this.worktreeState !== "closed" || super.hasFeatureOverlay()
-  }
-
-  protected override renderFeatureOverlay(baseLines: string[], width: number): string[] {
-    if (this.worktreeState !== "closed") {
-      return this.renderWorktreeOverlay(baseLines, width)
-    }
-    return super.renderFeatureOverlay(baseLines, width)
-  }
-
-  protected override handleFeatureOverlayInput(data: string): boolean {
-    if (this.worktreeState !== "closed") {
-      this.handleWorktreeInput(data)
-      return true
-    }
-    return super.handleFeatureOverlayInput(data)
-  }
-
-  protected override handleFeatureOpenInput(data: string): boolean {
-    if (data === "w") {
-      this.openWorktreePicker().catch((error: unknown) => this.showAsyncError(error))
-      return true
-    }
-    return super.handleFeatureOpenInput(data)
+    this.featureOverlays.register("worktree", {
+      isActive: () => this.worktreeState !== "closed",
+      activeTextField: () =>
+        this.worktreeState === "open" ? this.worktreePickerController.list.searchField : undefined,
+      helpContext: () => "worktreePicker",
+      render: (baseLines, width) => this.renderWorktreeOverlay(baseLines, width),
+      handleInput: (data) => this.handleWorktreeInput(data),
+      handleOpen: (data) => {
+        if (data !== "w") {
+          return false
+        }
+        if (this.requireViewerAction("worktrees") && this.canStartForegroundOperation("opening the worktree picker")) {
+          this.openWorktreePicker().catch((error: unknown) => this.showAsyncError(error))
+        }
+        return true
+      },
+      close: () => this.worktreePickerController.close(),
+    })
   }
 
   protected async openWorktreePicker(): Promise<void> {
+    if (!this.requireViewerAction("worktrees")) {
+      return
+    }
     if (this.document.repositoryState === "missing") {
       this.error = "Initialize a git repository before switching worktrees"
+      this.errorDetails = this.error
       this.statusMessage = undefined
       this.requestRender()
       return
     }
-    this.error = undefined
+    const requestId = ++this.worktreeRequest
+    const cwd = this.activePath()
     this.worktreeState = "loading"
     this.worktreePickerController.state = "loading"
     this.loadingMessage = "Loading worktrees…"
     this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
-    try {
-      const worktrees = await listWorktrees(this.pi, this.activePath(), this.ctx.signal)
-      this.worktreeState = "open"
-      this.worktreePickerController.open(worktrees, this.activePath())
-    } catch (error) {
+    const outcome = await this.runLoad({
+      label: "worktrees",
+      runningMessage: "Loading worktrees…",
+      load: ({ signal }) => listWorktrees(this.pi, cwd, signal),
+      apply: (worktrees) => {
+        if (requestId !== this.worktreeRequest || this.worktreeState === "closed") {
+          return
+        }
+        this.worktreeState = "open"
+        this.worktreePickerController.open(worktrees, cwd)
+      },
+    })
+    if (requestId !== this.worktreeRequest) {
+      return
+    }
+    if (outcome.kind !== "succeeded") {
       this.worktreeState = "closed"
       this.worktreePickerController.state = "closed"
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.loadingMessage = undefined
-      this.worktreePickerController.loadingMessage = undefined
-      this.requestRender()
     }
+    this.loadingMessage = undefined
+    this.worktreePickerController.loadingMessage = undefined
+    this.requestRender()
   }
 
   protected handleWorktreeInput(data: string): void {
     if (this.worktreeState === "loading") {
+      if (matchesKey(data, "escape")) {
+        this.worktreeRequest += 1
+        this.worktreeState = "closed"
+        this.worktreePickerController.state = "closed"
+        this.loadingMessage = undefined
+        this.worktreePickerController.loadingMessage = undefined
+        this.cancelActiveOperation()
+        this.requestRender()
+      }
       return
     }
     this.worktreePickerController.handleInput(data)
   }
 
   protected async switchToWorktree(worktree: WorktreeSummary): Promise<void> {
-    const previousPath = this.activePath()
+    if (!this.requireViewerAction("worktrees")) {
+      this.worktreeState = "closed"
+      this.worktreePickerController.state = "closed"
+      return
+    }
+    const requestId = ++this.worktreeRequest
+    const selection = this.documentState.captureSelection()
     this.worktreeState = "loading"
     this.worktreePickerController.state = "loading"
     this.loadingMessage = `Loading ${worktree.path}…`
     this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
-    try {
-      this.activeCwd = worktree.path
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
-      this.statusMessage = `Viewing ${worktree.path}`
-      this.worktreeState = "closed"
-      this.worktreePickerController.state = "closed"
-    } catch (error) {
-      this.activeCwd = previousPath
-      this.error = error instanceof Error ? error.message : String(error)
+    const outcome = await this.loadDocument(
+      { kind: "working", cwd: worktree.path },
+      {
+        runningMessage: `Loading ${worktree.path}…`,
+        successMessage: `Viewing ${worktree.path}`,
+        selection,
+      },
+    )
+    if (requestId !== this.worktreeRequest) {
+      return
+    }
+    if (outcome.kind === "failed" || outcome.kind === "rejected") {
       this.worktreeState = "open"
       this.worktreePickerController.state = "open"
-    } finally {
-      this.loadingMessage = undefined
-      this.worktreePickerController.loadingMessage = undefined
-      this.requestRender()
+      if (outcome.kind === "rejected") {
+        this.showOperationRejection("switch worktrees")
+      }
+    } else {
+      this.worktreeState = "closed"
+      this.worktreePickerController.state = "closed"
     }
+    this.loadingMessage = undefined
+    this.worktreePickerController.loadingMessage = undefined
+    this.requestRender()
   }
 
   protected renderWorktreeOverlay(baseLines: string[], width: number): string[] {

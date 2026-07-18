@@ -22,11 +22,19 @@ export interface WorktreeSummary {
 
 export const COMMIT_LIMIT = 200
 export const GIT_TIMEOUT_MS = 10_000
+export const COMMIT_MESSAGE_TIMEOUT_MS = 60_000
 export const MAX_UNTRACKED_FILE_BYTES = 256 * 1024
+export const MAX_UNTRACKED_PREVIEW_CONCURRENCY = 4
+export const MAX_UNTRACKED_PREVIEW_FILES = 100
+export const MAX_UNTRACKED_PREVIEW_BYTES = 1024 * 1024
 export const MAX_COMMIT_MESSAGE_DIFF_CHARS = 24_000
 
 export type DiffMode = "working" | "commit"
+export type DiffScope = "working" | "staged" | "commit"
+export type WorkingTreeView = Exclude<DiffScope, "commit">
 export type RepositoryState = "ready" | "missing"
+export type HeadState = "present" | "unborn"
+export type FileStageState = "unstaged" | "staged" | "mixed" | "conflicted"
 
 export interface CommitSummary {
   hash: string
@@ -35,11 +43,27 @@ export interface CommitSummary {
 
 export type CommitPickerItem = { type: "working" } | { type: "commit"; commit: CommitSummary }
 
+export type GitCommandRisk = { kind: "normal" } | { kind: "force-push" }
+
 export interface GitCommand {
   label: string
   description: string
   args: string[]
   refreshDiff: boolean
+  risk: GitCommandRisk
+}
+
+export interface PushPreviewUpdate {
+  flag: string
+  source: string
+  destination: string
+  summary: string
+}
+
+export interface ForcePushPreview {
+  command: string
+  destination: string
+  updates: PushPreviewUpdate[]
 }
 
 export interface DiffFile {
@@ -47,20 +71,44 @@ export interface DiffFile {
   oldPath?: string
   newPath?: string
   status: "added" | "deleted" | "modified" | "renamed" | "copied" | "binary" | "conflicted"
-  staged: boolean
+  stageState?: FileStageState
   untracked?: boolean
   lines: string[]
 }
 
-export interface DiffDocument {
-  mode: DiffMode
-  title: string
-  subtitle: string
+export interface DiffStats {
+  files: number
+  additions: number
+  deletions: number
+}
+
+export interface DiffSlice {
+  scope: DiffScope
   raw: string
   files: DiffFile[]
-  commit?: CommitSummary
-  repositoryState?: RepositoryState
+  stats: DiffStats
 }
+
+export interface DiffDocumentBase {
+  title: string
+  subtitle: string
+  repositoryState: RepositoryState
+  headState: HeadState
+}
+
+export interface WorkingTreeDocument extends DiffDocumentBase {
+  mode: "working"
+  working: DiffSlice
+  staged: DiffSlice
+}
+
+export interface CommitDocument extends DiffDocumentBase {
+  mode: "commit"
+  diff: DiffSlice
+  commit: CommitSummary
+}
+
+export type DiffDocument = WorkingTreeDocument | CommitDocument
 
 export interface GitExecResult {
   stdout: string
@@ -92,20 +140,40 @@ export const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor> = {
 }
 
 export const GIT_COMMANDS: GitCommand[] = [
-  { label: "Fetch", description: "Fetch updates from the default remote", args: ["fetch"], refreshDiff: true },
-  { label: "Pull", description: "Pull updates into the current branch", args: ["pull"], refreshDiff: true },
+  {
+    label: "Fetch",
+    description: "Fetch updates from the default remote",
+    args: ["fetch"],
+    refreshDiff: true,
+    risk: { kind: "normal" },
+  },
+  {
+    label: "Pull",
+    description: "Pull updates into the current branch",
+    args: ["pull"],
+    refreshDiff: true,
+    risk: { kind: "normal" },
+  },
   {
     label: "Pull (Rebase)",
     description: "Pull updates and rebase local commits",
     args: ["pull", "--rebase"],
     refreshDiff: true,
+    risk: { kind: "normal" },
   },
-  { label: "Push", description: "Push the current branch", args: ["push"], refreshDiff: true },
+  {
+    label: "Push",
+    description: "Push the current branch",
+    args: ["push"],
+    refreshDiff: true,
+    risk: { kind: "normal" },
+  },
   {
     label: "Force Push",
     description: "Push the current branch with --force-with-lease",
     args: ["push", "--force-with-lease"],
     refreshDiff: true,
+    risk: { kind: "force-push" },
   },
 ]
 

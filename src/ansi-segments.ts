@@ -1,15 +1,24 @@
 import { visibleWidth } from "@earendil-works/pi-tui"
 
 const ESCAPE = "\x1b"
+const RESET = "\x1b[0m"
+const TAB_SPACES = "    "
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 type StyledToken = { kind: "sgr"; code: string } | { kind: "text"; text: string; width: number }
+
+export interface SliceStyledColumnsOptions {
+  pad?: boolean
+}
+
+export function normalizeTabs(text: string): string {
+  return text.replace(/\t/gu, TAB_SPACES)
+}
 
 function readSgrCode(line: string, index: number): { code: string; length: number } | undefined {
   if (line[index] !== ESCAPE || line[index + 1] !== "[") {
     return undefined
   }
-
   const end = line.indexOf("m", index + 2)
   return end === -1 ? undefined : { code: line.slice(index, end + 1), length: end + 1 - index }
 }
@@ -20,7 +29,7 @@ function nextSgrStart(line: string, index: number): number {
 }
 
 function textTokens(text: string): StyledToken[] {
-  return [...graphemeSegmenter.segment(text)].map(({ segment }) => ({
+  return [...graphemeSegmenter.segment(normalizeTabs(text))].map(({ segment }) => ({
     kind: "text",
     text: segment,
     width: visibleWidth(segment),
@@ -30,7 +39,6 @@ function textTokens(text: string): StyledToken[] {
 function styledTokens(line: string): StyledToken[] {
   const tokens: StyledToken[] = []
   let index = 0
-
   while (index < line.length) {
     const sgr = readSgrCode(line, index)
     if (sgr) {
@@ -38,12 +46,10 @@ function styledTokens(line: string): StyledToken[] {
       index += sgr.length
       continue
     }
-
     const textEnd = nextSgrStart(line, index + 1)
     tokens.push(...textTokens(line.slice(index, textEnd)))
     index = textEnd
   }
-
   return tokens
 }
 
@@ -51,8 +57,13 @@ class SgrTracker {
   private activeCodes: string[] = []
 
   process(code: string): void {
-    const params = code.slice(2, -1)
-    this.activeCodes = params === "" || params === "0" ? [] : [...this.activeCodes, code]
+    const parameters = code.slice(2, -1)
+    const values = parameters === "" ? [0] : parameters.split(";").map((value) => Number(value))
+    if (values.includes(0)) {
+      this.activeCodes = values.some((value) => value !== 0) ? [code] : []
+      return
+    }
+    this.activeCodes.push(code)
   }
 
   activePrefix(): string {
@@ -60,40 +71,82 @@ class SgrTracker {
   }
 }
 
-function appendTextInRange(
-  result: string,
-  token: Extract<StyledToken, { kind: "text" }>,
-  currentColumn: number,
-  range: { start: number; end: number },
-  prefix: string,
-): { result: string; started: boolean } {
-  if (currentColumn < range.start || currentColumn >= range.end) {
-    return { result, started: false }
-  }
-
-  const started = result.length > 0
-  return { result: `${result}${started ? "" : prefix}${token.text}`, started: true }
+function boundedWhole(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
 }
 
-export function sliceStyledColumns(line: string, startColumn: number, length: number): string {
-  const range = { start: startColumn, end: startColumn + length }
+export function sliceStyledColumns(
+  line: string,
+  startColumn: number,
+  length: number,
+  options: SliceStyledColumnsOptions = {},
+): string {
+  const start = boundedWhole(startColumn)
+  const requestedLength = boundedWhole(length)
+  if (requestedLength === 0) {
+    return ""
+  }
+  const end = start + requestedLength
   const tracker = new SgrTracker()
   let result = ""
   let currentColumn = 0
+  let outputColumns = 0
+  let outputStarted = false
+  let emittedStyle = false
+
+  const startOutput = (): void => {
+    if (outputStarted) {
+      return
+    }
+    const prefix = tracker.activePrefix()
+    result += prefix
+    emittedStyle ||= prefix.length > 0
+    outputStarted = true
+  }
 
   for (const token of styledTokens(line)) {
     if (token.kind === "sgr") {
       tracker.process(token.code)
+      if (outputStarted && currentColumn >= start && currentColumn < end) {
+        result += token.code
+        emittedStyle = true
+      }
+      continue
+    }
+    if (token.width === 0) {
+      if (outputStarted && currentColumn >= start && currentColumn <= end) {
+        result += token.text
+      }
       continue
     }
 
-    const appended = appendTextInRange(result, token, currentColumn, range, tracker.activePrefix())
-    result = appended.result
-    currentColumn += token.width
-    if (currentColumn >= range.end) {
+    const tokenStart = currentColumn
+    const tokenEnd = currentColumn + token.width
+    currentColumn = tokenEnd
+    const overlapStart = Math.max(start, tokenStart)
+    const overlapEnd = Math.min(end, tokenEnd)
+    const overlapWidth = Math.max(0, overlapEnd - overlapStart)
+    if (overlapWidth === 0) {
+      if (tokenStart >= end) {
+        break
+      }
+      continue
+    }
+
+    startOutput()
+    const fullyVisible = tokenStart >= start && tokenEnd <= end
+    result += fullyVisible ? token.text : " ".repeat(overlapWidth)
+    outputColumns += fullyVisible ? token.width : overlapWidth
+    if (currentColumn >= end) {
       break
     }
   }
 
+  if (emittedStyle && !result.endsWith(RESET)) {
+    result += RESET
+  }
+  if (options.pad && outputColumns < requestedLength) {
+    result += " ".repeat(requestedLength - outputColumns)
+  }
   return result
 }

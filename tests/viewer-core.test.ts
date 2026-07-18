@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
+import { buildCommitDocument, createDiffSlice } from "../src/diff-document.js"
 import { renderScrollbar } from "../src/scrollbar.js"
-import type { DiffDocument } from "../src/types.js"
+import type { DiffDocument, DiffFile, WorkingTreeDocument } from "../src/types.js"
 import { DiffViewerCore } from "../src/viewer-core.js"
 import { DiffViewerFrame } from "../src/viewer-frame.js"
 import { DiffViewerOverlayBase } from "../src/viewer-overlay-base.js"
@@ -56,12 +57,14 @@ const theme = {
   bold: (text: string) => text,
 } as Theme
 
-const emptyDocument: DiffDocument = {
+const emptyDocument: WorkingTreeDocument = {
   mode: "working",
   title: "Diff",
   subtitle: "Working tree",
-  raw: "",
-  files: [],
+  repositoryState: "ready",
+  headState: "present",
+  working: createDiffSlice("working", ""),
+  staged: createDiffSlice("staged", ""),
 }
 
 function createViewer<T extends DiffViewerCore>(
@@ -100,8 +103,12 @@ function frameViewer(document: DiffDocument, viewerTheme: Theme = theme): TestFr
   )
 }
 
-function file(path: string, lines: string[] = ["diff"]): DiffDocument["files"][number] {
-  return { path, status: "modified", staged: false, lines }
+function file(path: string, lines: string[] = ["diff"]): DiffFile {
+  return { path, status: "modified", stageState: "unstaged", lines }
+}
+
+function workingWithFiles(files: DiffFile[]): WorkingTreeDocument {
+  return { ...emptyDocument, working: createDiffSlice("working", "", files) }
 }
 
 test("renderScrollbar fits lines and renders proportional scroll thumb", () => {
@@ -143,7 +150,7 @@ test("renderScrollbar fits lines and renders proportional scroll thumb", () => {
 })
 
 test("frame tree renders scrollbar when rows overflow", () => {
-  const viewer = frameViewer({ ...emptyDocument, files: [file("a.ts"), file("b.ts"), file("c.ts"), file("d.ts")] })
+  const viewer = frameViewer(workingWithFiles([file("a.ts"), file("b.ts"), file("c.ts"), file("d.ts")]))
 
   const lines = viewer.treeLines(12, 2)
 
@@ -151,17 +158,15 @@ test("frame tree renders scrollbar when rows overflow", () => {
   assert.equal(lines[1]?.endsWith("│"), true)
 })
 
-test("frame diff renders scrollbar only when pane is wide enough", () => {
-  const viewer = frameViewer({ ...emptyDocument, files: [file("a.ts", ["one", "two", "three", "four"])] })
+test("frame diff renders a scrollbar whenever rows overflow", () => {
+  const viewer = frameViewer(workingWithFiles([file("a.ts", ["one", "two", "three", "four"])]))
 
-  assert.deepEqual(
-    viewer.diffLines(100, 2, 2).map((line) => line.at(-1)),
-    ["│", "┃"],
-  )
-  assert.equal(
-    viewer.diffLines(99, 2, 2).some((line) => line.includes("│") || line.includes("┃")),
-    false,
-  )
+  for (const width of [50, 99, 100]) {
+    assert.deepEqual(
+      viewer.diffLines(width, 2, 2).map((line) => line.at(-1)),
+      ["│", "┃"],
+    )
+  }
 })
 
 test("diff body uses all terminal rows left after overlay margin and chrome", () => {
@@ -178,15 +183,20 @@ test("core help input opens and closes contextual help", () => {
 })
 
 test("core stage toggle reports unsupported modes without mutating status", () => {
-  const viewer = createViewer(TestViewerCore, 80, {
-    ...emptyDocument,
-    mode: "commit",
-    files: [file("src/example.ts")],
-  })
+  const viewer = createViewer(
+    TestViewerCore,
+    80,
+    buildCommitDocument({
+      title: "Commit abc123",
+      subtitle: "Working tree",
+      raw: "diff",
+      commit: { hash: "abc123", message: "historical" },
+    }),
+  )
 
   assert.equal(viewer.stageToggleInput("\n"), true)
   assert.deepEqual(viewer.status(), {
-    error: "Staging is only available in the working tree",
+    error: "Return to the working tree with W before staging or unstaging a file.",
     statusMessage: undefined,
   })
 })
@@ -200,9 +210,8 @@ test("core arrow delta maps vim-style navigation keys", () => {
 })
 
 test("frame diff renders structured rows and hides raw metadata", () => {
-  const viewer = frameViewer({
-    ...emptyDocument,
-    files: [
+  const viewer = frameViewer(
+    workingWithFiles([
       file("src/example.ts", [
         "diff --git a/src/example.ts b/src/example.ts",
         "index 1111111..2222222 100644",
@@ -214,13 +223,13 @@ test("frame diff renders structured rows and hides raw metadata", () => {
         "+new",
         "+extra",
       ]),
-    ],
-  })
+    ]),
+  )
 
   const lines = viewer.diffLines(99, 6).map((line) => line.trimEnd())
 
   assert.deepEqual(lines, [
-    "@@ src/example.ts · lines 1-3 @@ function demo()",
+    "     @@ src/example.ts · lines 1-3 @@ function demo()",
     " 1 │ context",
     "-2 │ old",
     "+2 │ new",
@@ -234,25 +243,21 @@ test("frame diff renders structured rows and hides raw metadata", () => {
 })
 
 test("frame diff scrolls by formatted rows and aligns scrollbar height", () => {
-  const document = {
-    ...emptyDocument,
-    files: [
-      file("src/example.ts", [
-        "diff --git a/src/example.ts b/src/example.ts",
-        "index 1111111..2222222 100644",
-        "--- a/src/example.ts",
-        "+++ b/src/example.ts",
-        "@@ -1,1 +1,2 @@",
-        " one",
-        "+two",
-      ]),
-    ],
-  }
+  const document = workingWithFiles([
+    file("src/example.ts", [
+      "diff --git a/src/example.ts b/src/example.ts",
+      "index 1111111..2222222 100644",
+      "--- a/src/example.ts",
+      "+++ b/src/example.ts",
+      "@@ -1,1 +1,2 @@",
+      " one",
+      "+two",
+    ]),
+  ])
 
+  const narrow = frameViewer(document).diffLines(99, 2, 10)
   assert.deepEqual(
-    frameViewer(document)
-      .diffLines(99, 2, 10)
-      .map((line) => line.trimEnd()),
+    narrow.map((line) => line.slice(0, -1).trimEnd()),
     [" 1 │ one", "+2 │ two"],
   )
   assert.deepEqual(
@@ -269,17 +274,11 @@ test("frame diff preserves conflict marker styling in structured rows", () => {
     bg: (_color: string, text: string) => text,
     bold: (text: string) => `<b>${text}</b>`,
   } as Theme
-  const viewer = frameViewer(
-    {
-      ...emptyDocument,
-      files: [file("conflict.ts", ["@@ -1,0 +1,1 @@", "+<<<<<<< ours"])],
-    },
-    styledTheme,
-  )
+  const viewer = frameViewer(workingWithFiles([file("conflict.ts", ["@@ -1,0 +1,1 @@", "+<<<<<<< ours"])]), styledTheme)
 
   const lines = viewer.diffLines(99, 2).map((line) => line.trimEnd())
 
-  assert.equal(lines[1], "<error><b>+1 │ <<<<<<< ours</b></error>")
+  assert.match(lines[1] ?? "", /^<error><b>\+1 │ <<<<<<< ours\s*<\/b><\/error>$/u)
 })
 
 test("overlay merge preserves ANSI styling outside replaced columns", () => {

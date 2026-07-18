@@ -1,13 +1,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { GIT_TIMEOUT_MS, type GitExecResult } from "./types.js"
-
-async function git(pi: ExtensionAPI, cwd: string, args: string[], signal?: AbortSignal): Promise<GitExecResult> {
-  return pi.exec("git", args, { cwd, signal, timeout: GIT_TIMEOUT_MS })
-}
+import { assertGitSuccess, git } from "./git-service.js"
+import type { GitExecResult } from "./types.js"
 
 function branchWithCounts(branch: string, ahead: number, behind: number): string {
   const suffix = [ahead > 0 ? `↑${ahead}` : "", behind > 0 ? `↓${behind}` : ""].filter(Boolean).join(" ")
   return suffix ? `${branch} ${suffix}` : branch
+}
+
+function isMissingUpstream(result: GitExecResult): boolean {
+  return /no upstream configured|no upstream branch|upstream branch .* not stored|does not point to a branch/iu.test(
+    result.stderr,
+  )
+}
+
+function parseUpstreamCounts(output: string): { ahead: number; behind: number } {
+  const [behindText, aheadText, ...extra] = output.trim().split(/\s+/)
+  const behind = Number(behindText)
+  const ahead = Number(aheadText)
+  if (extra.length > 0 || !Number.isFinite(behind) || !Number.isFinite(ahead)) {
+    throw new Error(`git rev-list returned malformed upstream counts: ${output.trim() || "(empty)"}`)
+  }
+  return { ahead, behind }
 }
 
 export async function currentBranchStatusLabel(
@@ -19,18 +32,19 @@ export async function currentBranchStatusLabel(
   if (!branch || branch.startsWith("detached ")) {
     return branch
   }
-  const result = await git(pi, root, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], signal)
-  if (result.code !== 0) {
+  const args = ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]
+  const result = await git(pi, root, args, signal)
+  if (result.code === 128 && !result.killed && isMissingUpstream(result)) {
     return branch
   }
-  const [behindText = "0", aheadText = "0"] = result.stdout.trim().split(/\s+/)
-  return branchWithCounts(branch, Number(aheadText) || 0, Number(behindText) || 0)
+  assertGitSuccess(result, args, root)
+  const { ahead, behind } = parseUpstreamCounts(result.stdout)
+  return branchWithCounts(branch, ahead, behind)
 }
 
 export async function conflictedPaths(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<Set<string>> {
-  const result = await git(pi, root, ["diff", "--name-only", "--diff-filter=U", "-z"], signal)
-  if (result.code !== 0 || !result.stdout) {
-    return new Set()
-  }
+  const args = ["diff", "--name-only", "--diff-filter=U", "-z"]
+  const result = await git(pi, root, args, signal)
+  assertGitSuccess(result, args, root)
   return new Set(result.stdout.split("\0").filter(Boolean))
 }

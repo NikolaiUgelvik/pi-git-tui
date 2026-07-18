@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { selectDiffSlice } from "../src/diff-document.js"
 import { buildDocument, emptyDocument } from "../src/diff-parser.js"
-import type { DiffFile } from "../src/types.js"
+import type { DiffDocument, DiffFile } from "../src/types.js"
 
 // Resolve to source tests/ directory (not .tmp-tests/)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -13,6 +14,10 @@ const fixturesDir = join(sourceDir, "fixtures")
 
 function readFixture(name: string): string {
   return readFileSync(join(fixturesDir, name), "utf8")
+}
+
+function files(document: DiffDocument): DiffFile[] {
+  return selectDiffSlice(document).files
 }
 
 type ExpectedParsedFile = Pick<DiffFile, "path" | "status">
@@ -31,16 +36,16 @@ test("emptyDocument creates an empty document with correct defaults", () => {
   assert.equal(doc.title, "Title")
   assert.equal(doc.subtitle, "Subtitle")
   assert.equal(doc.mode, "working")
-  assert.equal(doc.raw, "")
-  assert.deepEqual(doc.files, [])
+  assert.equal(selectDiffSlice(doc).raw, "")
+  assert.deepEqual(files(doc), [])
 })
 
-test("emptyDocument supports optional commit and repositoryState", () => {
-  const doc = emptyDocument("Title", "Subtitle", "commit", { hash: "abc", message: "msg" }, "missing")
+test("emptyDocument supports commit metadata", () => {
+  const doc = emptyDocument("Title", "Subtitle", "commit", { hash: "abc", message: "msg" })
 
   assert.equal(doc.mode, "commit")
-  assert.equal(doc.commit?.hash, "abc")
-  assert.equal(doc.repositoryState, "missing")
+  assert.equal(doc.commit.hash, "abc")
+  assert.equal(doc.repositoryState, "ready")
 })
 
 // --- parseDiff: added file ---
@@ -49,11 +54,11 @@ test("parseDiff detects added file from /dev/null old path", () => {
   const raw = readFixture("diff-add.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "added")
-  assert.equal(doc.files[0]?.path, "src/new-file.ts")
-  assert.equal(doc.files[0]?.oldPath, "/dev/null")
-  assert.equal(doc.files[0]?.newPath, "src/new-file.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "added")
+  assert.equal(files(doc)[0]?.path, "src/new-file.ts")
+  assert.equal(files(doc)[0]?.oldPath, "/dev/null")
+  assert.equal(files(doc)[0]?.newPath, "src/new-file.ts")
 })
 
 // --- parseDiff: deleted file ---
@@ -62,11 +67,11 @@ test("parseDiff detects deleted file from /dev/null new path", () => {
   const raw = readFixture("diff-delete.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "deleted")
-  assert.equal(doc.files[0]?.path, "src/old-file.ts")
-  assert.equal(doc.files[0]?.oldPath, "src/old-file.ts")
-  assert.equal(doc.files[0]?.newPath, "/dev/null")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "deleted")
+  assert.equal(files(doc)[0]?.path, "src/old-file.ts")
+  assert.equal(files(doc)[0]?.oldPath, "src/old-file.ts")
+  assert.equal(files(doc)[0]?.newPath, "/dev/null")
 })
 
 // --- parseDiff: renamed file ---
@@ -75,11 +80,11 @@ test("parseDiff detects renamed file and extracts old/new paths", () => {
   const raw = readFixture("diff-rename.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "renamed")
-  assert.equal(doc.files[0]?.path, "src/new-name.ts")
-  assert.equal(doc.files[0]?.oldPath, "src/old-name.ts")
-  assert.equal(doc.files[0]?.newPath, "src/new-name.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "renamed")
+  assert.equal(files(doc)[0]?.path, "src/new-name.ts")
+  assert.equal(files(doc)[0]?.oldPath, "src/old-name.ts")
+  assert.equal(files(doc)[0]?.newPath, "src/new-name.ts")
 })
 
 // --- parseDiff: copied file ---
@@ -88,11 +93,11 @@ test("parseDiff detects copied file", () => {
   const raw = readFixture("diff-copy.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "copied")
-  assert.equal(doc.files[0]?.path, "src/copy.ts")
-  assert.equal(doc.files[0]?.oldPath, "src/original.ts")
-  assert.equal(doc.files[0]?.newPath, "src/copy.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "copied")
+  assert.equal(files(doc)[0]?.path, "src/copy.ts")
+  assert.equal(files(doc)[0]?.oldPath, "src/original.ts")
+  assert.equal(files(doc)[0]?.newPath, "src/copy.ts")
 })
 
 // --- parseDiff: binary file ---
@@ -101,9 +106,9 @@ test("parseDiff detects binary file", () => {
   const raw = readFixture("diff-binary.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "binary")
-  assert.equal(doc.files[0]?.path, "assets/logo.png")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "binary")
+  assert.equal(files(doc)[0]?.path, "assets/logo.png")
 })
 
 // --- parseDiff: conflicted file ---
@@ -112,9 +117,9 @@ test("parseDiff marks conflicted paths when provided in conflictedPaths set", ()
   const raw = readFixture("diff-conflicted.txt")
   const doc = buildDocument("working", "test", "test", raw, undefined, new Set(), new Set(["src/module.ts"]))
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "conflicted")
-  assert.equal(doc.files[0]?.path, "src/module.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "conflicted")
+  assert.equal(files(doc)[0]?.path, "src/module.ts")
 })
 
 // --- parseDiff: untracked file ---
@@ -123,9 +128,9 @@ test("parseDiff marks untracked files when provided in untrackedPaths set", () =
   const raw = readFixture("diff-untracked.txt")
   const doc = buildDocument("working", "test", "test", raw, undefined, new Set(), new Set(), new Set(["src/temp.ts"]))
 
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "added")
-  assert.equal(doc.files[0]?.untracked, true)
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "added")
+  assert.equal(files(doc)[0]?.untracked, true)
 })
 
 // --- parseDiff: no-HEAD case ---
@@ -134,11 +139,11 @@ test("parseDiff handles no-HEAD multi-file diff with all additions", () => {
   const raw = readFixture("diff-no-head.txt")
   const doc = buildDocument("working", "test", "test", raw)
 
-  assert.equal(doc.files.length, 2)
-  assert.equal(doc.files[0]?.status, "added")
-  assert.equal(doc.files[1]?.status, "added")
-  assert.equal(doc.files[0]?.path, "README.md")
-  assert.equal(doc.files[1]?.path, "src/index.ts")
+  assert.equal(files(doc).length, 2)
+  assert.equal(files(doc)[0]?.status, "added")
+  assert.equal(files(doc)[1]?.status, "added")
+  assert.equal(files(doc)[0]?.path, "README.md")
+  assert.equal(files(doc)[1]?.path, "src/index.ts")
 })
 
 // --- parseDiff: multi-file diff ---
@@ -155,9 +160,9 @@ test("parseDiff splits multi-file diff into individual files", () => {
     { status: "binary", path: "assets/image.png" },
   ]
 
-  assert.equal(doc.files.length, expectedFiles.length)
+  assert.equal(files(doc).length, expectedFiles.length)
   expectedFiles.forEach((expected, index) => {
-    assertParsedFile(doc.files[index], expected)
+    assertParsedFile(files(doc)[index], expected)
   })
 })
 
@@ -165,24 +170,24 @@ test("parseDiff splits multi-file diff into individual files", () => {
 
 test("parseDiff returns empty array for empty input", () => {
   const doc = buildDocument("working", "test", "test", "")
-  assert.deepEqual(doc.files, [])
+  assert.deepEqual(files(doc), [])
 })
 
 test("parseDiff returns empty array for whitespace-only input", () => {
   // Whitespace-only input is treated as a single chunk with no recognizable paths
   const doc = buildDocument("working", "test", "test", "   \n\n  ")
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.path, "(unknown)")
-  assert.equal(doc.files[0]?.status, "modified")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.path, "(unknown)")
+  assert.equal(files(doc)[0]?.status, "modified")
 })
 
 test("parseDiff handles single line diff", () => {
   // Without ---/+++ lines, the parser can't determine old/new paths, so status is 'modified'
   const raw = "diff --git a/x.txt b/x.txt\nnew file mode 100644"
   const doc = buildDocument("working", "test", "test", raw)
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "modified")
-  assert.equal(doc.files[0]?.path, "x.txt")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "modified")
+  assert.equal(files(doc)[0]?.path, "x.txt")
 })
 
 test("parseDiff handles modified file (no special status)", () => {
@@ -196,9 +201,9 @@ test("parseDiff handles modified file (no special status)", () => {
     "+new",
   ].join("\n")
   const doc = buildDocument("working", "test", "test", raw)
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "modified")
-  assert.equal(doc.files[0]?.path, "src/file.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.status, "modified")
+  assert.equal(files(doc)[0]?.path, "src/file.ts")
 })
 
 test("parseDiff handles quoted paths with special characters", () => {
@@ -211,8 +216,8 @@ test("parseDiff handles quoted paths with special characters", () => {
     "+new",
   ].join("\n")
   const doc = buildDocument("working", "test", "test", raw)
-  assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.path, "src/file with spaces.ts")
+  assert.equal(files(doc).length, 1)
+  assert.equal(files(doc)[0]?.path, "src/file with spaces.ts")
 })
 
 test("parseDiff preserves staged/untracked flags from buildDocument sets", () => {
@@ -227,6 +232,6 @@ test("parseDiff preserves staged/untracked flags from buildDocument sets", () =>
     new Set(),
     new Set(),
   )
-  assert.equal(doc.files[0]?.staged, true)
-  assert.equal(doc.files[0]?.untracked, undefined)
+  assert.equal(files(doc)[0]?.stageState, "staged")
+  assert.equal(files(doc)[0]?.untracked, undefined)
 })

@@ -37,7 +37,7 @@ export async function getWorktrees(pi: ExtensionAPI, cwd: string, signal?: Abort
   const root = await requireGitRepository(pi, cwd, signal)
   const args = ["worktree", "list", "--porcelain"]
   const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args)
+  assertGitSuccess(result, args, root)
   return parseWorktreeList(result.stdout)
 }
 

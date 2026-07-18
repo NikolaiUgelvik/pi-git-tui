@@ -4,12 +4,20 @@ export function isViewerKey(data: string, key: string): boolean {
   return data === key || data === key.toUpperCase()
 }
 
+export function isF1Input(data: string): boolean {
+  return matchesKey(data, "f1") || data === "\x1bOP"
+}
+
 export function isHelpKey(data: string): boolean {
-  return data === "?"
+  return data === "?" || isF1Input(data)
 }
 
 export function isHelpCloseInput(data: string): boolean {
   return isHelpKey(data) || matchesKey(data, "escape") || isViewerKey(data, "q")
+}
+
+export function isCommitGenerationInput(data: string): boolean {
+  return matchesKey(data, "ctrl+g") || data === "\x07"
 }
 
 export function isEnterInput(data: string): boolean {
@@ -33,6 +41,22 @@ export function arrowScrollDelta(data: string): number {
     return -1
   }
   return matchesKey(data, "down") || isViewerKey(data, "j") ? 1 : 0
+}
+
+export function horizontalScrollDelta(data: string): number {
+  if (matchesKey(data, "shift+left") || data === "\x1b[1;2D") {
+    return -16
+  }
+  if (matchesKey(data, "shift+right") || data === "\x1b[1;2C") {
+    return 16
+  }
+  if (matchesKey(data, "left") || data === "\x1b[D") {
+    return -4
+  }
+  if (matchesKey(data, "right") || data === "\x1b[C") {
+    return 4
+  }
+  return 0
 }
 
 export function isPrintableInput(data: string): boolean {

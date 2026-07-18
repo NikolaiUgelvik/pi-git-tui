@@ -112,6 +112,13 @@ test("search filters worktrees by branch name", () => {
   assert.equal(controller.list.filteredCount, 1)
 })
 
+test("printable punctuation belongs to worktree search", () => {
+  const { controller } = createController()
+  controller.open(sampleWorktrees, "/repo")
+  controller.handleInput("?*q")
+  assert.equal(controller.list.searchQuery, "?*q")
+})
+
 test("backspace removes last search character", () => {
   const { controller } = createController()
   controller.open(sampleWorktrees, "/repo")
@@ -202,18 +209,13 @@ test("escape closes the picker", () => {
   assert.equal(h.controller.state, "closed")
 })
 
-test("q key closes the picker", () => {
+test("q and Q belong to the worktree search field", () => {
   const h = createController()
   h.controller.open(sampleWorktrees, "/repo")
   h.controller.handleInput("q")
-  assert.equal(h.closed, true)
-})
-
-test("Q key closes the picker", () => {
-  const h = createController()
-  h.controller.open(sampleWorktrees, "/repo")
   h.controller.handleInput("Q")
-  assert.equal(h.closed, true)
+  assert.equal(h.closed, false)
+  assert.equal(h.controller.list.searchQuery, "qQ")
 })
 
 // --- Loading state ---

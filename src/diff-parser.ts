@@ -1,14 +1,29 @@
-import { parseDiff } from "./diff-parser-core.js"
-import type { CommitSummary, DiffDocument, DiffMode, RepositoryState } from "./types.js"
+import {
+  buildCommitDocument,
+  buildWorkingTreeDocument,
+  emptyWorkingTreeDocument,
+  selectDiffSlice,
+} from "./diff-document.js"
+import type { CommitSummary, DiffDocument, DiffMode, HeadState, RepositoryState, WorkingTreeDocument } from "./types.js"
 
 export function emptyDocument(
   title: string,
   subtitle: string,
   mode: DiffMode,
   commit?: CommitSummary,
-  repositoryState?: RepositoryState,
+  repositoryState: RepositoryState = "ready",
+  headState: HeadState = "present",
 ): DiffDocument {
-  return { mode, title, subtitle, raw: "", files: [], commit, repositoryState }
+  if (mode === "commit") {
+    return buildCommitDocument({
+      title,
+      subtitle,
+      raw: "",
+      commit: commit ?? { hash: "", message: "" },
+      headState,
+    })
+  }
+  return emptyWorkingTreeDocument(title, subtitle, repositoryState, headState)
 }
 
 export function buildDocument(
@@ -20,12 +35,33 @@ export function buildDocument(
   stagedPaths = new Set<string>(),
   conflictedPaths = new Set<string>(),
   untrackedPaths = new Set<string>(),
+  repositoryState: RepositoryState = "ready",
+  headState: HeadState = "present",
 ): DiffDocument {
-  const files = parseDiff(raw).map((file) => ({
-    ...file,
-    status: conflictedPaths.has(file.path) ? "conflicted" : file.status,
-    staged: stagedPaths.has(file.path),
-    untracked: untrackedPaths.has(file.path) || undefined,
-  }))
-  return { mode, title, subtitle, raw, files, commit }
+  if (mode === "commit") {
+    return buildCommitDocument({ title, subtitle, raw, commit: commit ?? { hash: "", message: "" }, headState })
+  }
+  const document = buildWorkingTreeDocument({
+    title,
+    subtitle,
+    workingRaw: raw,
+    stagedRaw: "",
+    conflictedPaths,
+    untrackedPaths,
+    repositoryState,
+    headState,
+  })
+  applyLegacyStagedPaths(document, stagedPaths)
+  return document
+}
+
+function applyLegacyStagedPaths(document: WorkingTreeDocument, stagedPaths: Set<string>): void {
+  if (stagedPaths.size === 0) {
+    return
+  }
+  for (const file of selectDiffSlice(document, "working").files) {
+    if (stagedPaths.has(file.path)) {
+      file.stageState = "staged"
+    }
+  }
 }

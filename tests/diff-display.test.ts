@@ -7,7 +7,7 @@ function file(lines: string[], options: Partial<DiffFile> = {}): DiffFile {
   return {
     path: "src/example.ts",
     status: "modified",
-    staged: false,
+    stageState: "unstaged",
     lines,
     ...options,
   }

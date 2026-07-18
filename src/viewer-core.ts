@@ -1,83 +1,39 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { matchesKey } from "@earendil-works/pi-tui"
-import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
+import { HelpOverlayState } from "./help-overlay-state.js"
 import { fit } from "./render-text.js"
-import { buildTreeRows } from "./tree.js"
-import type { DiffDocument, FocusPanel, HelpContext } from "./types.js"
-import {
-  arrowScrollDelta as inputArrowScrollDelta,
-  isEnterInput,
-  isHelpCloseInput as isHelpCloseKey,
-  isHelpKey as isHelpOpenKey,
-  isPageDownInput,
-  isPageUpInput,
-  isPrintableInput as isPrintableKey,
-  isShiftEnterInput,
-  isViewerKey,
-} from "./viewer-key-input.js"
+import type { SingleLineTextField } from "./single-line-text-field.js"
+import type { HelpContext } from "./types.js"
+import { commitReviewIntent } from "./viewer-index-policy.js"
+import { isF1Input, isHelpCloseInput as isHelpCloseKey, isHelpKey as isHelpOpenKey } from "./viewer-key-input.js"
+import { DiffViewerNavigationBase } from "./viewer-navigation-base.js"
+import { ViewerOverlayCoordinator } from "./viewer-overlay-coordinator.js"
 
-export class DiffViewerCore {
-  protected document: DiffDocument
-  protected readonly pi: ExtensionAPI
-  protected readonly ctx: ExtensionContext
-  protected readonly theme: Theme
-  protected readonly done: () => void
-  protected readonly requestRender: () => void
-  protected activeCwd: string
-
-  protected selectedFileIndex = 0
-  protected diffScroll = 0
-  protected focusedPanel: FocusPanel = "tree"
-  protected commitMessage = ""
-  protected commitMessageCaret = 0
+export class DiffViewerCore extends DiffViewerNavigationBase {
   protected commitAmend = false
-  protected pickerState: "closed" | "loading" | "open" = "closed"
-  protected commandMenuState: "closed" | "loading" | "open" = "closed"
   protected commitDialogState: "closed" | "loading" | "open" = "closed"
-  protected helpContext: HelpContext | undefined
-  protected loadingMessage: string | undefined
-  protected statusMessage: string | undefined
-  protected error: string | undefined
+  protected commandMenuState: "closed" | "loading" | "open" | "confirm" = "closed"
+  protected readonly helpOverlayState = new HelpOverlayState()
+  protected readonly featureOverlays = new ViewerOverlayCoordinator()
+  protected pickerState: "closed" | "loading" | "open" = "closed"
 
-  constructor(
-    pi: ExtensionAPI,
-    ctx: ExtensionContext,
-    theme: Theme,
-    document: DiffDocument,
-    done: () => void,
-    requestRender: () => void,
-    protected readonly getTerminalRows: () => number,
-  ) {
-    this.pi = pi
-    this.ctx = ctx
-    this.theme = theme
-    this.document = document
-    this.done = done
-    this.requestRender = requestRender
-    this.activeCwd = ctx.cwd
-    this.resetSelectionToFirstTreeFile()
+  protected get helpContext(): HelpContext | undefined {
+    return this.helpOverlayState.context
   }
 
-  protected activePath(): string {
-    return this.activeCwd
-  }
-
-  protected activeContext(): ExtensionContext {
-    return { ...this.ctx, cwd: this.activePath() }
-  }
-
-  protected handleHelpInput(data: string): boolean {
+  protected handleHelpInput(data: string, allowPrintableShortcut = true): boolean {
     if (this.helpContext !== undefined) {
       if (this.isHelpCloseInput(data)) {
-        this.helpContext = undefined
+        this.helpOverlayState.close()
+        this.requestRender()
+      } else if (this.helpOverlayState.handleNavigation(data)) {
         this.requestRender()
       }
       return true
     }
-    if (!this.isHelpKey(data)) {
+    if (!this.isHelpKey(data) || (!allowPrintableShortcut && !isF1Input(data))) {
       return false
     }
-    this.helpContext = this.currentHelpContext()
+    this.helpOverlayState.open(this.currentHelpContext())
     this.requestRender()
     return true
   }
@@ -95,7 +51,7 @@ export class DiffViewerCore {
       return "commitDialog"
     }
     if (this.commandMenuState !== "closed") {
-      return "commandMenu"
+      return this.commandMenuState === "confirm" ? "confirmDialog" : "commandMenu"
     }
     if (this.pickerState !== "closed") {
       return "commitPicker"
@@ -119,9 +75,23 @@ export class DiffViewerCore {
     return false
   }
 
+  protected handleOperationCancelInput(data: string): boolean {
+    if (!matchesKey(data, "escape") || !this.isOperationBusy()) {
+      return false
+    }
+    this.cancelActiveOperation()
+    return true
+  }
+
   protected handleCloseInput(data: string): boolean {
     if (!this.isKey(data, "q") && !matchesKey(data, "escape")) {
       return false
+    }
+    if (this.isOperationBusy()) {
+      this.error = "Press Escape to cancel the active operation before closing"
+      this.errorDetails = this.error
+      this.requestRender()
+      return true
     }
     this.done()
     return true
@@ -129,6 +99,7 @@ export class DiffViewerCore {
 
   protected handleOpenOverlayInput(data: string): boolean {
     const handlers = [
+      () => this.handleReturnToWorkingTreeInput(data),
       () => this.handleOpenCommitDialogInput(data),
       () => this.handleOpenPickerInput(data),
       () => this.handleOpenCommandMenuInput(data),
@@ -140,13 +111,54 @@ export class DiffViewerCore {
     if (data !== "c") {
       return false
     }
-    this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    if (this.requireViewerAction("commitPicker") && this.canStartForegroundOperation("opening commit history")) {
+      this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    }
+    return true
+  }
+
+  protected handleReturnToWorkingTreeInput(data: string): boolean {
+    if (data !== "W") {
+      return false
+    }
+    if (this.document.mode === "working" && this.documentState.abandonFailedTarget()) {
+      this.prepareOperation()
+      this.statusMessage = "Viewing working tree"
+      this.requestRender()
+      return true
+    }
+    this.documentState.abandonFailedTarget()
+    if (this.requireViewerAction("workingTree") && this.canStartForegroundOperation("returning to the working tree")) {
+      this.returnToWorkingTree().catch((error: unknown) => this.showAsyncError(error))
+    }
     return true
   }
 
   protected handleOpenCommitDialogInput(data: string): boolean {
     if (data !== "C") {
       return false
+    }
+    if (!this.requireViewerAction("commit")) {
+      return true
+    }
+    const intent = commitReviewIntent(this.document, this.workingTreeView)
+    if (intent.kind === "blocked") {
+      this.error = intent.message
+      this.errorDetails = intent.message
+      this.statusMessage = undefined
+      this.requestRender()
+      return true
+    }
+    if (!this.canStartForegroundOperation("opening staged review")) {
+      return true
+    }
+    if (intent.kind === "review") {
+      this.documentState.setWorkingTreeView("staged")
+      this.statusMessage = undefined
+      this.error = undefined
+      this.errorDetails = undefined
+      this.requestRender()
+      return true
     }
     this.openCommitDialog()
     return true
@@ -156,271 +168,38 @@ export class DiffViewerCore {
     if (!matchesKey(data, "ctrl+p")) {
       return false
     }
-    this.openCommandMenu()
-    return true
-  }
-
-  protected handleViewerNavigationInput(data: string): void {
-    const handlers = [
-      () => this.handleFocusToggle(data),
-      () => this.handleStageAllInput(data),
-      () => this.handleFileStageToggle(data),
-      () => this.handleFileStep(data),
-      () => this.handleArrowScroll(data),
-      () => this.handlePageScroll(data),
-      () => this.handleEdgeJump(data),
-    ]
-    for (const handler of handlers) {
-      if (handler()) {
-        return
-      }
-    }
-  }
-
-  protected handleFocusToggle(data: string): boolean {
-    if (!matchesKey(data, "tab")) {
-      return false
-    }
-    this.focusedPanel = this.focusedPanel === "tree" ? "diff" : "tree"
-    return true
-  }
-
-  protected handleStageAllInput(data: string): boolean {
-    if (!this.isShiftEnter(data)) {
-      return false
-    }
-    if (this.document.mode !== "working") {
-      this.error = "Staging is only available in the working tree"
-      this.statusMessage = undefined
-      return true
-    }
-    this.stageAllVisibleChanges().catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleFileStageToggle(data: string): boolean {
-    if (!this.isEnter(data) || this.focusedPanel !== "tree") {
-      return false
-    }
-    if (this.document.mode !== "working") {
-      this.error = "Staging is only available in the working tree"
-      this.statusMessage = undefined
-      return true
-    }
-    const file = this.document.files[this.selectedFileIndex]
-    if (!file) {
-      return true
-    }
-    this.toggleSelectedFileStage(file.path).catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleFileStep(data: string): boolean {
-    if (this.isKey(data, "n")) {
-      this.moveFile(1)
-      return true
-    }
-    if (this.isKey(data, "p")) {
-      this.moveFile(-1)
-      return true
-    }
-    return false
-  }
-
-  protected handleArrowScroll(data: string): boolean {
-    const delta = this.arrowScrollDelta(data)
-    if (delta === 0) {
-      return false
-    }
-    if (this.focusedPanel === "tree") {
-      this.moveFile(delta)
-    } else {
-      this.scrollDiff(delta)
+    if (this.requireViewerAction("commands") && this.canStartForegroundOperation("opening the command menu")) {
+      this.openCommandMenu()
     }
     return true
   }
 
-  protected arrowScrollDelta(data: string): number {
-    return inputArrowScrollDelta(data)
-  }
-
-  protected handlePageScroll(data: string): boolean {
-    if (this.isPageUp(data)) {
-      this.scrollDiff(-this.pageScrollSize())
-      return true
-    }
-    if (this.isPageDown(data) || matchesKey(data, "space")) {
-      this.scrollDiff(this.pageScrollSize())
-      return true
-    }
-    return false
-  }
-
-  protected handleEdgeJump(data: string): boolean {
-    if (matchesKey(data, "home")) {
-      this.jumpToEdge("first")
-      return true
-    }
-    if (matchesKey(data, "end")) {
-      this.jumpToEdge("last")
-      return true
-    }
-    return false
-  }
-
-  protected jumpToEdge(edge: "first" | "last"): void {
-    if (this.focusedPanel === "tree") {
-      this.selectTreeEdge(edge)
-      return
-    }
-    this.diffScroll = edge === "first" ? 0 : Number.MAX_SAFE_INTEGER
-  }
-
-  protected isKey(data: string, key: string): boolean {
-    return isViewerKey(data, key)
-  }
-
-  protected isEnter(data: string): boolean {
-    return isEnterInput(data)
-  }
-
-  protected isShiftEnter(data: string): boolean {
-    return isShiftEnterInput(data)
-  }
-
-  protected isPageUp(data: string): boolean {
-    return isPageUpInput(data)
-  }
-
-  protected isPageDown(data: string): boolean {
-    return isPageDownInput(data)
-  }
-
-  protected isPrintableInput(data: string): boolean {
-    return isPrintableKey(data)
-  }
-
-  protected showAsyncError(error: unknown): void {
-    this.error = error instanceof Error ? error.message : String(error)
-    this.statusMessage = undefined
+  protected override showAsyncError(error: unknown): void {
+    this.showUnexpectedError(error)
+    this.featureOverlays.closeActive()
     this.pickerState = "closed"
     this.commandMenuState = "closed"
     this.commitDialogState = "closed"
-    this.loadingMessage = undefined
-    this.requestRender()
   }
 
   protected renderOverlays(baseLines: string[], width: number): string[] {
     return baseLines.map((line) => fit(line, width))
   }
 
-  protected handleCommitDialogInput(_data: string): void {}
+  protected activeTextField(): SingleLineTextField | undefined {
+    return
+  }
 
-  protected handleCommandMenuInput(_data: string): void {}
-
-  protected handleCommitPickerInput(_data: string): void {}
-
-  protected openCommitPicker(): Promise<void> {
+  protected returnToWorkingTree(): Promise<void> {
     return Promise.resolve()
   }
 
+  protected handleCommitDialogInput(_data: string): void {}
+  protected handleCommandMenuInput(_data: string): void {}
+  protected handleCommitPickerInput(_data: string): void {}
+  protected openCommitPicker(): Promise<void> {
+    return Promise.resolve()
+  }
   protected openCommitDialog(): void {}
-
   protected openCommandMenu(): void {}
-  protected viewHeight(): number {
-    // The custom diff viewer is shown as an overlay with a 1-row margin. Keep the
-    // component shorter than the visible terminal so re-renders never push content
-    // into scrollback when users browse with arrow keys or PageUp/PageDown.
-    const maxTotalLines = Math.max(10, this.getTerminalRows() - 2)
-    const chromeLines = 7 // border, header, subtitle, dividers, footer, border
-    return Math.max(5, maxTotalLines - chromeLines)
-  }
-
-  protected pageScrollSize(): number {
-    return Math.max(1, Math.floor((this.viewHeight() - 1) / 2))
-  }
-
-  protected moveFile(delta: number): void {
-    const fileOrder = this.treeFileOrder()
-    if (fileOrder.length === 0) {
-      return
-    }
-    const currentOrderIndex = Math.max(0, fileOrder.indexOf(this.selectedFileIndex))
-    const nextOrderIndex = Math.max(0, Math.min(fileOrder.length - 1, currentOrderIndex + delta))
-    this.selectedFileIndex = fileOrder[nextOrderIndex] ?? this.selectedFileIndex
-    this.diffScroll = 0
-  }
-
-  protected selectTreeEdge(edge: "first" | "last"): void {
-    const fileOrder = this.treeFileOrder()
-    if (fileOrder.length === 0) {
-      return
-    }
-    this.selectedFileIndex = fileOrder[edge === "first" ? 0 : fileOrder.length - 1] ?? this.selectedFileIndex
-    this.diffScroll = 0
-  }
-
-  protected treeFileOrder(): number[] {
-    return buildTreeRows(this.document.files)
-      .map((row) => row.fileIndex)
-      .filter((index): index is number => index !== undefined)
-  }
-
-  protected scrollDiff(delta: number): void {
-    this.diffScroll = Math.max(0, this.diffScroll + delta)
-  }
-
-  protected resetSelectionToFirstTreeFile(): void {
-    this.selectedFileIndex = this.treeFileOrder()[0] ?? 0
-    this.diffScroll = 0
-  }
-
-  protected selectFileByPath(path: string): boolean {
-    const fileIndex = this.document.files.findIndex((file) => file.path === path)
-    if (fileIndex < 0) {
-      return false
-    }
-    this.selectedFileIndex = fileIndex
-    this.diffScroll = 0
-    return true
-  }
-
-  protected async refreshWorkingTreePreservingFile(path: string): Promise<void> {
-    this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-    if (!this.selectFileByPath(path)) {
-      this.resetSelectionToFirstTreeFile()
-    }
-  }
-
-  protected async toggleSelectedFileStage(path: string): Promise<void> {
-    this.error = undefined
-    this.statusMessage = `Updating ${path}…`
-    this.requestRender()
-    try {
-      const message = await stageOrUnstageFile(this.pi, this.activePath(), path, this.ctx.signal)
-      await this.refreshWorkingTreePreservingFile(path)
-      this.statusMessage = message
-    } catch (error) {
-      this.statusMessage = undefined
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.requestRender()
-    }
-  }
-
-  protected async stageAllVisibleChanges(): Promise<void> {
-    this.error = undefined
-    this.statusMessage = "Staging all changes…"
-    this.requestRender()
-    try {
-      this.statusMessage = await toggleAllChangesStaged(this.pi, this.activePath(), this.ctx.signal)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-    } catch (error) {
-      this.statusMessage = undefined
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.requestRender()
-    }
-  }
 }

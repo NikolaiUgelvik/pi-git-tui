@@ -3,9 +3,10 @@
 // Rendering is pure; side effects (loading diffs) go through callbacks.
 
 import type { Theme } from "@earendil-works/pi-coding-agent"
+import { visibleWidth } from "@earendil-works/pi-tui"
 import { FilterableListState } from "./filterable-list-state.js"
 import { createOverlayFrame, renderSearchOverlayFrame } from "./overlay-frame.js"
-import { handleFilterableListInput, isEscapeInput, resetFilterableList } from "./overlay-input.js"
+import { handleFilterableListControllerInput, resetFilterableList } from "./overlay-input.js"
 import type { CommitPickerItem, CommitSummary } from "./types.js"
 
 // --- Types ---
@@ -63,16 +64,13 @@ export class CommitPickerController {
   // --- Input handling ---
 
   public handleInput(data: string): void {
-    if (this.state === "loading") {
-      return
-    }
-    if (isEscapeInput(data)) {
-      this.close()
-      return
-    }
-    handleFilterableListInput(data, this.list, (item) => this.handleSelection(item))
-    this.list.clampSelection()
-    this._callbacks.onRequestRender()
+    handleFilterableListControllerInput(data, {
+      state: this.state,
+      list: this.list,
+      onEnter: (item) => this.handleSelection(item),
+      onClose: () => this.close(),
+      onRequestRender: this._callbacks.onRequestRender,
+    })
   }
 
   private handleSelection(item: CommitPickerItem): void {
@@ -95,19 +93,26 @@ export class CommitPickerController {
       frame,
       theme,
       "Select commit",
-      "type search • backspace edit • ↑↓ navigate • enter select • ? help • esc cancel",
-      this.renderSearchLine(theme),
+      frame.compact
+        ? "↑↓ move • Enter select • Esc close • F1"
+        : "type search • backspace edit • ↑↓ navigate • enter select • F1 help • esc cancel",
+      this.renderSearchLine(frame.innerWidth, theme),
       this.renderBodyRows(frame.maxItems, theme),
     )
   }
 
-  private renderSearchLine(theme: Theme): string {
-    const query =
-      this.list.searchQuery.length > 0 ? `${this.list.searchQuery}▌` : theme.fg("muted", "type to filter commits")
+  private renderSearchLine(innerWidth: number, theme: Theme): string {
+    const prefix = " Search: "
     const matchCount = this.getFilteredCommitCount()
     const countLabel =
       this.list.searchQuery.trim().length > 0 ? ` ${theme.fg("muted", `(${matchCount}/${this.totalCommits})`)}` : ""
-    return ` Search: ${query}${countLabel}`
+    const fieldWidth = Math.max(1, innerWidth - visibleWidth(prefix) - visibleWidth(countLabel))
+    const field = this.list.searchField.render(
+      fieldWidth,
+      this.list.searchField.focused,
+      theme.fg("muted", "type to filter commits"),
+    )
+    return `${prefix}${field}${countLabel}`
   }
 
   private getFilteredCommitCount(): number {

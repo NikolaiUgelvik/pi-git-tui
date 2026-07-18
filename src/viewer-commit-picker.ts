@@ -1,11 +1,14 @@
+import { matchesKey } from "@earendil-works/pi-tui"
 import { CommitPickerController } from "./commit-picker-controller.js"
 import { isBackspace } from "./filterable-list-state.js"
-import { loadCommitDiff, loadCommits, loadWorkingTreeDiff } from "./git.js"
+import { loadCommits } from "./git.js"
+import type { SingleLineTextField } from "./single-line-text-field.js"
 import type { CommitSummary } from "./types.js"
 import { DiffViewerOverlayBase } from "./viewer-overlay-base.js"
 
 export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
   protected commitPickerController: CommitPickerController
+  private commitPickerRequest = 0
 
   constructor(...args: ConstructorParameters<typeof DiffViewerOverlayBase>) {
     super(...args)
@@ -17,81 +20,128 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
         void this.selectCommit(commit).catch((error: unknown) => this.showAsyncError(error))
       },
       onClose: () => {
+        this.commitPickerRequest += 1
         this.pickerState = "closed"
       },
       onRequestRender: () => this.requestRender(),
     })
   }
 
+  protected override activeTextField(): SingleLineTextField | undefined {
+    return this.pickerState === "open" ? this.commitPickerController.list.searchField : super.activeTextField()
+  }
+
   protected async openCommitPicker(): Promise<void> {
-    this.error = undefined
+    const requestId = ++this.commitPickerRequest
+    const cwd = this.activePath()
     this.pickerState = "loading"
     this.commitPickerController.state = "loading"
     this.loadingMessage = "Loading commits…"
     this.commitPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
-    try {
-      const commits = await loadCommits(this.pi, this.activePath(), this.ctx.signal)
-      this.pickerState = "open"
-      this.commitPickerController.open(commits)
-    } catch (error) {
+    const outcome = await this.runLoad({
+      label: "commit history",
+      runningMessage: "Loading commits…",
+      load: ({ signal }) => loadCommits(this.pi, cwd, signal),
+      apply: (commits) => {
+        if (requestId !== this.commitPickerRequest || this.pickerState === "closed") {
+          return
+        }
+        this.pickerState = "open"
+        this.commitPickerController.open(commits)
+      },
+    })
+    if (requestId !== this.commitPickerRequest) {
+      return
+    }
+    if (outcome.kind !== "succeeded") {
       this.pickerState = "closed"
       this.commitPickerController.state = "closed"
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.loadingMessage = undefined
-      this.commitPickerController.loadingMessage = undefined
-      this.requestRender()
     }
+    this.loadingMessage = undefined
+    this.commitPickerController.loadingMessage = undefined
+    this.requestRender()
   }
 
   protected handleCommitPickerInput(data: string): void {
     if (this.pickerState === "loading") {
+      if (matchesKey(data, "escape")) {
+        this.commitPickerRequest += 1
+        this.pickerState = "closed"
+        this.commitPickerController.state = "closed"
+        this.loadingMessage = undefined
+        this.commitPickerController.loadingMessage = undefined
+        this.cancelActiveOperation()
+        this.requestRender()
+      }
       return
     }
     this.commitPickerController.handleInput(data)
   }
 
-  protected async selectWorkingTree(): Promise<void> {
-    this.pickerState = "loading"
-    this.commitPickerController.state = "loading"
-    this.loadingMessage = "Loading working tree…"
-    this.commitPickerController.loadingMessage = this.loadingMessage
-    this.requestRender()
-    try {
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.pickerState = "closed"
-      this.commitPickerController.state = "closed"
-      this.loadingMessage = undefined
-      this.commitPickerController.loadingMessage = undefined
-      this.requestRender()
+  protected override async returnToWorkingTree(): Promise<void> {
+    if (!this.requireViewerAction("workingTree")) {
+      return
     }
+    const outcome = await this.loadDocument(
+      { kind: "working", cwd: this.activePath() },
+      {
+        runningMessage: "Loading working tree…",
+        successMessage: "Viewing working tree",
+        recordFailure: true,
+      },
+    )
+    if (outcome.kind === "succeeded") {
+      this.error = undefined
+      this.errorDetails = undefined
+    }
+    this.requestRender()
+  }
+
+  protected async selectWorkingTree(): Promise<void> {
+    await this.selectDocument(
+      { kind: "working", cwd: this.activePath() },
+      "Loading working tree…",
+      "Viewing working tree",
+    )
   }
 
   protected async selectCommit(commit: CommitSummary): Promise<void> {
+    await this.selectDocument(
+      { kind: "commit", cwd: this.activePath(), commit },
+      `Loading ${commit.hash}…`,
+      `Viewing ${commit.hash}`,
+    )
+  }
+
+  private async selectDocument(
+    request: { kind: "working"; cwd: string } | { kind: "commit"; cwd: string; commit: CommitSummary },
+    loadingMessage: string,
+    successMessage: string,
+  ): Promise<void> {
+    const requestId = ++this.commitPickerRequest
     this.pickerState = "loading"
     this.commitPickerController.state = "loading"
-    this.loadingMessage = `Loading ${commit.hash}…`
-    this.commitPickerController.loadingMessage = this.loadingMessage
+    this.loadingMessage = loadingMessage
+    this.commitPickerController.loadingMessage = loadingMessage
     this.requestRender()
-    try {
-      this.document = await loadCommitDiff(this.pi, this.activePath(), commit, this.ctx.signal)
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.pickerState = "closed"
-      this.commitPickerController.state = "closed"
-      this.loadingMessage = undefined
-      this.commitPickerController.loadingMessage = undefined
-      this.requestRender()
+    const outcome = await this.loadDocument(request, {
+      runningMessage: loadingMessage,
+      successMessage,
+      recordFailure: true,
+    })
+    if (requestId !== this.commitPickerRequest) {
+      return
     }
+    this.pickerState = "closed"
+    this.commitPickerController.state = "closed"
+    this.loadingMessage = undefined
+    this.commitPickerController.loadingMessage = undefined
+    if (outcome.kind === "succeeded") {
+      this.error = undefined
+      this.errorDetails = undefined
+    }
+    this.requestRender()
   }
 
   protected renderCommitPickerOverlay(baseLines: string[], width: number): string[] {
@@ -100,7 +150,6 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
     return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
   }
 
-  // Kept for subclasses that still use this method (branch picker, stash picker, worktree picker)
   protected isBackspace(data: string): boolean {
     return isBackspace(data)
   }

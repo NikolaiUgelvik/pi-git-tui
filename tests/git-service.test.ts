@@ -4,15 +4,18 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import { runGitCommit } from "../src/commit-message-service.js"
 import { createAndSwitchBranch, getBranches, getBranchName, switchBranch } from "../src/git-branch-service.js"
 import { runGitCommand } from "../src/git-command-service.js"
 import { getCommitRangeDiff, getStagedDiff } from "../src/git-diff-service.js"
 import { getCommitCount, getCommitMessage, getCommits } from "../src/git-history-service.js"
 import {
   getStagedPaths,
+  stageAllRemaining,
   stagedDiffForCommitMessage,
-  stageOrUnstageFile,
-  toggleAllChangesStaged,
+  stageRemainingFile,
+  unstageAll,
+  unstageFile,
 } from "../src/git-index-service.js"
 import {
   assertGitSuccess,
@@ -165,20 +168,52 @@ test("diff service returns staged and commit range diffs", async () => {
   assert.equal(await getCommitRangeDiff(pi, "/repo", "main", "feature"), "range diff")
 })
 
-test("index service stages, unstages, toggles all changes, and lists staged paths", async () => {
+test("index service exposes deterministic stage and unstage operations", async () => {
   const { pi } = createRepoPi((args) => {
     const command = args.join(" ")
-    if (command === "diff --cached --quiet -- src/file.ts") return gitResult("", 0)
-    if (command === "add -- src/file.ts") return gitResult("")
-    if (command === "diff --cached --name-only -z") return gitResult("src/file.ts\0")
-    if (command === "diff --quiet --") return gitResult("", 1)
+    if (command === "add --all -- src/file.ts") return gitResult("")
+    if (command === "restore --staged -- src/file.ts") return gitResult("")
     if (command === "add --all") return gitResult("")
+    if (command === "restore --staged -- .") return gitResult("")
+    if (command === "diff --cached --name-only -z") return gitResult("src/file.ts\0")
     return gitResult("", 1, `unexpected ${command}`)
   })
 
-  assert.equal(await stageOrUnstageFile(pi, "/repo", "src/file.ts"), "Staged src/file.ts")
-  assert.equal(await toggleAllChangesStaged(pi, "/repo"), "Staged all changes")
+  assert.equal(await stageRemainingFile(pi, "/repo", "src/file.ts"), "Staged remaining changes in src/file.ts")
+  assert.equal(await unstageFile(pi, "/repo", "src/file.ts"), "Unstaged src/file.ts")
+  assert.equal(await stageAllRemaining(pi, "/repo"), "Staged all remaining changes")
+  assert.equal(await unstageAll(pi, "/repo"), "Unstaged all changes")
   assert.deepEqual(await getStagedPaths(pi, "/repo"), new Set(["src/file.ts"]))
+})
+
+test("normal commit refuses an empty index before invoking git commit", async () => {
+  let commitCalls = 0
+  const { pi } = createRepoPi((args) => {
+    const command = args.join(" ")
+    if (command === "diff --cached --quiet --") return gitResult()
+    if (command === "commit -m empty") {
+      commitCalls += 1
+      return gitResult("unexpected")
+    }
+    return gitResult("", 1, `unexpected ${command}`)
+  })
+
+  await assert.rejects(() => runGitCommit(pi, "/repo", "empty"), /No staged changes to commit/u)
+  assert.equal(commitCalls, 0)
+})
+
+test("amend permits an empty index and skips the normal-commit guard", async () => {
+  const { pi, calls } = createRepoPi((args) => {
+    const command = args.join(" ")
+    if (command === "commit --amend -m message-only") return gitResult("Amended")
+    return gitResult("", 1, `unexpected ${command}`)
+  })
+
+  assert.equal(await runGitCommit(pi, "/repo", "message-only", undefined, true), "Amended")
+  assert.equal(
+    calls.some((call) => call.args.join(" ") === "diff --cached --quiet --"),
+    false,
+  )
 })
 
 test("stagedDiffForCommitMessage combines stat and diff and truncates long output", async () => {
@@ -247,6 +282,7 @@ test("command service runs configured git command", async () => {
       description: "Fetch updates",
       args: ["fetch"],
       refreshDiff: true,
+      risk: { kind: "normal" },
     }),
     "Fetch complete: updated",
   )

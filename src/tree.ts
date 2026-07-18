@@ -23,8 +23,15 @@ function addDirectoryRows(rows: TreeRow[], seenDirs: Set<string>, dirs: string[]
   }
 }
 
-function stagedGlyph(file: DiffFile): string {
-  return file.staged ? "●" : " "
+const STAGE_STATE_GLYPHS: Record<NonNullable<DiffFile["stageState"]>, string> = {
+  staged: "●",
+  unstaged: "○",
+  mixed: "◐",
+  conflicted: "!",
+}
+
+function stageStateGlyph(file: DiffFile): string {
+  return file.stageState ? STAGE_STATE_GLYPHS[file.stageState] : " "
 }
 
 const STATUS_GLYPHS: Record<DiffFile["status"], string> = {
@@ -45,7 +52,7 @@ function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFil
   const displayParts = info.file.path.split("/").filter(Boolean)
   addDirectoryRows(rows, seenDirs, displayParts.slice(0, -1))
   rows.push({
-    label: `${stagedGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
+    label: `${stageStateGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
     fileIndex: info.index,
     depth: Math.max(0, displayParts.length - 1),
     isLast: true,

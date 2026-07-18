@@ -115,6 +115,14 @@ test("search filters commits by message", () => {
   }
 })
 
+test("printable q, ?, and * belong to commit search", () => {
+  const { controller } = createController()
+  controller.open(mockCommits)
+  controller.handleInput("q?*")
+  assert.equal(controller.list.searchQuery, "q?*")
+  assert.equal(controller.state, "open")
+})
+
 test("search filters commits by hash", () => {
   const { controller } = createController()
   controller.open(mockCommits)

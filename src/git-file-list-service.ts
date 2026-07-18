@@ -1,18 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { git } from "./git-service.js"
+import { assertGitSuccess, git } from "./git-service.js"
 
 export async function listUntrackedFiles(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string[]> {
-  const result = await git(pi, cwd, ["ls-files", "--others", "--exclude-standard", "-z"], signal)
-  if (result.code !== 0 || !result.stdout) {
-    return []
-  }
+  const args = ["ls-files", "--others", "--exclude-standard", "-z"]
+  const result = await git(pi, cwd, args, signal)
+  assertGitSuccess(result, args, cwd)
   return result.stdout.split("\0").filter(Boolean)
 }
 
 export async function listStagedFiles(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<Set<string>> {
-  const result = await git(pi, cwd, ["diff", "--cached", "--name-only", "-z"], signal)
-  if (result.code !== 0 || !result.stdout) {
-    return new Set()
-  }
+  const args = ["diff", "--cached", "--name-only", "-z"]
+  const result = await git(pi, cwd, args, signal)
+  assertGitSuccess(result, args, cwd)
   return new Set(result.stdout.split("\0").filter(Boolean))
 }

@@ -1,15 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { ensureGitRepository, git } from "./git-service.js"
-import type { CommitSummary } from "./types.js"
-import { COMMIT_LIMIT } from "./types.js"
+import { assertGitSuccess, git, isUnbornHeadResult, requireGitRepository } from "./git-service.js"
+import { COMMIT_LIMIT, type CommitSummary } from "./types.js"
 
 export async function getCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<CommitSummary[]> {
-  const root = await ensureGitRepository(pi, cwd, signal)
-  if (!root) {
+  const root = await requireGitRepository(pi, cwd, signal)
+  const args = ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"]
+  const result = await git(pi, root, args, signal)
+  if (isUnbornHeadResult(result)) {
     return []
   }
-  const result = await git(pi, root, ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"], signal)
-  if (result.code !== 0 || !result.stdout.trim()) {
+  assertGitSuccess(result, args, root)
+  if (!result.stdout.trim()) {
     return []
   }
   return result.stdout.split("\n").map((line) => {
@@ -18,7 +19,6 @@ export async function getCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSi
   })
 }
 
-// Alias for loadCommits (public API name used by viewer-commit-picker.ts)
 export { getCommits as loadCommits }
 
 export async function getCommitMessage(
@@ -27,25 +27,24 @@ export async function getCommitMessage(
   hash: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const root = await ensureGitRepository(pi, cwd, signal)
-  if (!root) {
-    return ""
-  }
-  const result = await git(pi, root, ["log", "-1", "--format=%s", hash], signal)
-  if (result.code !== 0) {
-    return ""
-  }
+  const root = await requireGitRepository(pi, cwd, signal)
+  const args = ["log", "-1", "--format=%s", hash]
+  const result = await git(pi, root, args, signal)
+  assertGitSuccess(result, args, root)
   return result.stdout.trim()
 }
 
 export async function getCommitCount(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<number> {
-  const root = await ensureGitRepository(pi, cwd, signal)
-  if (!root) {
+  const root = await requireGitRepository(pi, cwd, signal)
+  const args = ["rev-list", "--count", "HEAD"]
+  const result = await git(pi, root, args, signal)
+  if (isUnbornHeadResult(result)) {
     return 0
   }
-  const result = await git(pi, root, ["rev-list", "--count", "HEAD"], signal)
-  if (result.code !== 0) {
-    return 0
+  assertGitSuccess(result, args, root)
+  const count = Number.parseInt(result.stdout.trim(), 10)
+  if (!Number.isFinite(count)) {
+    throw new Error(`git rev-list returned an invalid commit count: ${result.stdout.trim() || "(empty)"}`)
   }
-  return parseInt(result.stdout.trim(), 10) || 0
+  return count
 }

@@ -4,9 +4,10 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent"
 import { matchesKey } from "@earendil-works/pi-tui"
-import { FilterableListState, isBackspace, isEnter, isPrintableInput } from "./filterable-list-state.js"
-import { createOverlayFrame } from "./overlay-frame.js"
-import { handleFilterableListInput, isCancelInput } from "./overlay-input.js"
+import { FilterableListState, isEnter } from "./filterable-list-state.js"
+import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
+import { handleFilterableListInput, isEscapeInput } from "./overlay-input.js"
+import { SingleLineTextField } from "./single-line-text-field.js"
 import type { BranchSummary } from "./types.js"
 
 // --- Types ---
@@ -26,13 +27,28 @@ export class BranchPickerController {
   public list: FilterableListState<BranchSummary>
   public state: "closed" | "loading" | "open" | "create" = "closed"
   public loadingMessage: string | undefined
-  public branchCreateName = ""
 
+  private readonly branchCreateField = new SingleLineTextField()
   private readonly _callbacks: BranchPickerCallbacks
 
   constructor(callbacks: BranchPickerCallbacks) {
     this._callbacks = callbacks
     this.list = new FilterableListState<BranchSummary>([], (branch) => `${branch.name} ${branch.upstream ?? ""}`)
+  }
+
+  get branchCreateName(): string {
+    return this.branchCreateField.value
+  }
+
+  set branchCreateName(value: string) {
+    this.branchCreateField.setValue(value, "end")
+  }
+
+  public activeTextField(): SingleLineTextField | undefined {
+    if (this.state === "create") {
+      return this.branchCreateField
+    }
+    return this.state === "open" ? this.list.searchField : undefined
   }
 
   // --- Lifecycle ---
@@ -60,16 +76,21 @@ export class BranchPickerController {
   // --- Input handling ---
 
   public handleInput(data: string): void {
+    if (isEscapeInput(data)) {
+      if (this.state === "create") {
+        this.state = "open"
+        this._callbacks.onRequestRender()
+      } else {
+        this.close()
+      }
+      return
+    }
     if (this.state === "loading") {
       return
     }
     if (this.state === "create") {
       this.updateCreateInput(data)
       this._callbacks.onRequestRender()
-      return
-    }
-    if (isCancelInput(data)) {
-      this.close()
       return
     }
     this.updatePickerInput(data)
@@ -94,21 +115,11 @@ export class BranchPickerController {
   }
 
   private updateCreateInput(data: string): void {
-    if (isBackspace(data)) {
-      this.branchCreateName = [...this.branchCreateName].slice(0, -1).join("")
-      return
-    }
     if (isEnter(data)) {
       this.submitCreateInput()
       return
     }
-    if (isCancelInput(data)) {
-      this.state = "open"
-      return
-    }
-    if (isPrintableInput(data)) {
-      this.branchCreateName += data
-    }
+    this.branchCreateField.handleInput(data, "editor")
   }
 
   private submitCreateInput(): void {
@@ -127,34 +138,47 @@ export class BranchPickerController {
    * Matches the existing branch picker rendering behavior exactly.
    */
   public renderOverlayLines(baseLineCount: number, width: number, theme: Theme): string[] {
-    const { maxItems, row, border } = createOverlayFrame(baseLineCount, width, theme)
-
-    const lines: string[] = [
-      border("top"),
-      row(` ${theme.fg("accent", theme.bold("Branches"))}`),
-      row(` ${theme.fg("dim", "type search • Ctrl+N new • enter switch/create • ? help • esc cancel")}`),
-      ...this.renderBodyRows(maxItems, theme),
-      row(""),
-      border("bottom"),
-    ]
-    return lines
+    const frame = createOverlayFrame(baseLineCount, width, theme)
+    const hint = frame.compact
+      ? "↑↓ move • Enter select • Ctrl+N new • Esc"
+      : "type search • Ctrl+N new • enter switch/create • F1 help • esc cancel"
+    return renderOverlayFrame(
+      frame,
+      ` ${theme.fg("accent", theme.bold("Branches"))}`,
+      ` ${theme.fg("dim", hint)}`,
+      this.renderBodyRows(frame.maxItems, frame.innerWidth, frame.compact, theme),
+    )
   }
 
-  private renderBodyRows(maxItems: number, theme: Theme): string[] {
+  private renderBodyRows(maxItems: number, innerWidth: number, compact: boolean, theme: Theme): string[] {
     if (this.state === "loading") {
-      return [rowEmpty(), rowContent(` ${theme.fg("warning", this.loadingMessage ?? "Loading…")}`)]
+      return [rowContent(` ${theme.fg("warning", this.loadingMessage ?? "Loading…")}`)]
     }
     if (this.state === "create") {
-      const placeholder = this.branchCreateName || theme.fg("muted", "branch-name")
-      return [rowEmpty(), rowContent(` New branch: ${placeholder}▌`)]
+      const prefix = " New branch: "
+      const field = this.branchCreateField.render(
+        Math.max(1, innerWidth - prefix.length),
+        this.branchCreateField.focused,
+        theme.fg("muted", "branch-name"),
+      )
+      return [rowContent(`${prefix}${field}`)]
     }
-    return [rowContent(this.renderSearchLine(theme)), rowEmpty(), ...this.renderBranchItems(maxItems, theme)]
+    const spacing = compact ? [] : [rowEmpty()]
+    return [
+      rowContent(this.renderSearchLine(innerWidth, theme)),
+      ...spacing,
+      ...this.renderBranchItems(maxItems, theme),
+    ]
   }
 
-  private renderSearchLine(theme: Theme): string {
-    const query =
-      this.list.searchQuery.length > 0 ? `${this.list.searchQuery}▌` : theme.fg("muted", "type to filter branches")
-    return ` Search: ${query}`
+  private renderSearchLine(innerWidth: number, theme: Theme): string {
+    const prefix = " Search: "
+    const field = this.list.searchField.render(
+      Math.max(1, innerWidth - prefix.length),
+      this.list.searchField.focused,
+      theme.fg("muted", "type to filter branches"),
+    )
+    return `${prefix}${field}`
   }
 
   private renderBranchItems(maxItems: number, theme: Theme): string[] {

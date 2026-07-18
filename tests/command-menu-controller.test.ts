@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Theme } from "@earendil-works/pi-coding-agent"
 import { CommandMenuController } from "../src/command-menu-controller.js"
-import type { GitCommand } from "../src/types.js"
+import type { ForcePushPreview, GitCommand } from "../src/types.js"
 import { GIT_COMMANDS } from "../src/types.js"
 
 // --- Test harness ---
@@ -13,12 +13,15 @@ const mockTheme = {
   bold: (text: string) => text,
 } as unknown as Theme
 
-function createController(runCommandSpy?: (cmd: GitCommand) => void) {
+function createController(runCommandSpy?: (cmd: GitCommand) => void, previewForcePushSpy?: (cmd: GitCommand) => void) {
   let closed = false
   let renderCalled = false
   const callbacks = {
     onRunCommand: async (command: GitCommand) => {
       if (runCommandSpy) runCommandSpy(command)
+    },
+    onPreviewForcePush: (command: GitCommand) => {
+      previewForcePushSpy?.(command)
     },
     onClose: () => {
       closed = true
@@ -38,6 +41,22 @@ function createController(runCommandSpy?: (cmd: GitCommand) => void) {
       return renderCalled
     },
   }
+}
+
+const forcePushCommand = GIT_COMMANDS.find((command) => command.risk.kind === "force-push")
+assert.ok(forcePushCommand)
+
+const forcePushPreview: ForcePushPreview = {
+  command: "git push --force-with-lease",
+  destination: "https://example.com/org/repo.git",
+  updates: [
+    {
+      flag: "+",
+      source: "refs/heads/main",
+      destination: "refs/heads/main",
+      summary: "abc123..def456 (forced update)",
+    },
+  ],
 }
 
 // --- Opening the menu ---
@@ -95,6 +114,14 @@ test("typing a character appends to search query", () => {
   controller.open()
   controller.handleInput("f")
   assert.equal(controller.list.searchQuery, "f")
+})
+
+test("printable q, ?, and * belong to command search", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.handleInput("q?*")
+  assert.equal(controller.list.searchQuery, "q?*")
+  assert.equal(controller.state, "open")
 })
 
 test("typing multiple characters builds search query", () => {
@@ -225,6 +252,78 @@ test("enter after navigating selects the new command", () => {
   controller.handleInput("\x1b[B") // down to 1
   controller.handleInput("\r") // enter
   assert.equal(selectedCommand?.label, GIT_COMMANDS[1].label)
+})
+
+test("Force Push previews on first Enter and repeated Enter cannot run it", () => {
+  const runs: GitCommand[] = []
+  const previews: GitCommand[] = []
+  const { controller } = createController(
+    (command) => runs.push(command),
+    (command) => previews.push(command),
+  )
+  controller.open()
+  controller.handleInput("\x1b[F")
+
+  controller.handleInput("\r")
+  controller.handleInput("\r")
+
+  assert.deepEqual(previews, [forcePushCommand])
+  assert.deepEqual(runs, [])
+  assert.equal(controller.state, "loading")
+})
+
+test("force-push confirmation shows exact destination and command", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.showForcePushConfirmation(forcePushCommand, forcePushPreview)
+
+  const frame = controller.renderOverlayLines(30, 120, mockTheme).join("\n")
+
+  assert.match(frame, /git push --force-with-lease/u)
+  assert.match(frame, /https:\/\/example\.com\/org\/repo\.git/u)
+  assert.match(frame, /refs\/heads\/main → refs\/heads\/main/u)
+  assert.match(frame, /Enter: Force push • Esc: Cancel/u)
+})
+
+test("compact force-push confirmation keeps destination and ref update visible", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.showForcePushConfirmation(forcePushCommand, forcePushPreview)
+
+  const frame = controller.renderOverlayLines(8, 30, mockTheme)
+  const compactText = frame.join("").replace(/[\s│╭╮╰╯─]/gu, "")
+
+  assert.match(compactText, /https:\/\/example\.com\/org\/repo\.git/u)
+  assert.match(compactText, /main→main/u)
+  assert.match(frame.join("\n"), /Enter: Push/u)
+  assert.match(frame.join("\n"), /Esc/u)
+})
+
+test("Escape from force-push confirmation preserves filter and selection", () => {
+  const { controller } = createController()
+  controller.open()
+  controller.list.searchQuery = "push"
+  controller.list.selectedIndex = 1
+  controller.showForcePushConfirmation(forcePushCommand, forcePushPreview)
+
+  controller.handleInput("\x1b")
+
+  assert.equal(controller.state, "open")
+  assert.equal(controller.list.searchQuery, "push")
+  assert.equal(controller.list.selectedIndex, 1)
+})
+
+test("second Enter executes a confirmed force push exactly once", () => {
+  const runs: GitCommand[] = []
+  const { controller } = createController((command) => runs.push(command))
+  controller.open()
+  controller.showForcePushConfirmation(forcePushCommand, forcePushPreview)
+
+  controller.handleInput("\r")
+  controller.handleInput("\r")
+
+  assert.deepEqual(runs, [forcePushCommand])
+  assert.equal(controller.state, "loading")
 })
 
 // --- Escape closes the menu ---

@@ -1,5 +1,7 @@
 import type { DiffFile } from "./types.js"
 
+export type ParsedDiffFile = Omit<DiffFile, "stageState">
+
 function dropDiffSidePrefix(value: string): string {
   return value.startsWith("a/") || value.startsWith("b/") ? value.slice(2) : value
 }
@@ -21,13 +23,15 @@ function unquoteGitPath(path: string): string {
 }
 
 const DIFF_GIT_LINE = /^diff --git (.+) (.+)$/
+const DIFF_COMBINED_LINE = /^diff --(?:cc|combined) (.+)$/
 
-function pathFromDiffGit(line: string): string | undefined {
-  const match = line.match(DIFF_GIT_LINE)
-  if (!match) {
-    return
+function pathFromDiffHeader(line: string): string | undefined {
+  const regularMatch = line.match(DIFF_GIT_LINE)
+  if (regularMatch) {
+    return unquoteGitPath(regularMatch[2] ?? regularMatch[1] ?? "")
   }
-  return unquoteGitPath(match[2] ?? match[1] ?? "")
+  const combinedMatch = line.match(DIFF_COMBINED_LINE)
+  return combinedMatch ? unquoteGitPath(combinedMatch[1] ?? "") : undefined
 }
 
 function lineHasAnyPrefix(line: string, prefixes: string[]): boolean {
@@ -72,7 +76,7 @@ interface DiffChunkState {
 }
 
 function startsNewDiffChunk(state: DiffChunkState, line: string): boolean {
-  return state.current.length > 0 && line.startsWith("diff --git ")
+  return state.current.length > 0 && /^diff --(?:git|cc|combined) /u.test(line)
 }
 
 function flushCurrentChunk(state: DiffChunkState): void {
@@ -105,12 +109,12 @@ interface MetadataLineRule {
 }
 
 const METADATA_LINE_RULES: MetadataLineRule[] = [
-  {
-    prefix: "diff --git ",
-    apply: (metadata, line) => {
-      metadata.fallbackPath = pathFromDiffGit(line) ?? metadata.fallbackPath
+  ...["diff --git ", "diff --cc ", "diff --combined "].map((prefix) => ({
+    prefix,
+    apply: (metadata: DiffMetadata, line: string) => {
+      metadata.fallbackPath = pathFromDiffHeader(line) ?? metadata.fallbackPath
     },
-  },
+  })),
   {
     prefix: "--- ",
     apply: (metadata, line) => {
@@ -157,18 +161,18 @@ function displayPath(metadata: DiffMetadata): string {
   return usablePath(metadata.newPath) ?? usablePath(metadata.oldPath) ?? metadata.fallbackPath ?? "(unknown)"
 }
 
-function diffFileFromChunk(lines: string[]): DiffFile {
+function diffFileFromChunk(lines: string[]): ParsedDiffFile {
   const metadata = extractDiffMetadata(lines)
+  const combined = lines[0]?.startsWith("diff --cc ") || lines[0]?.startsWith("diff --combined ")
   return {
     path: displayPath(metadata),
     oldPath: metadata.oldPath,
     newPath: metadata.newPath,
-    status: statusFromLines(lines, metadata.oldPath, metadata.newPath),
-    staged: false,
+    status: combined ? "conflicted" : statusFromLines(lines, metadata.oldPath, metadata.newPath),
     lines,
   }
 }
 
-export function parseDiff(raw: string): DiffFile[] {
+export function parseDiff(raw: string): ParsedDiffFile[] {
   return diffChunks(normalizedDiffLines(raw)).map(diffFileFromChunk)
 }

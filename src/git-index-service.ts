@@ -1,102 +1,112 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { listStagedFiles, listUntrackedFiles } from "./git-file-list-service.js"
-import { assertGitSuccess, compactGitOutput, ensureGitRepository, git } from "./git-service.js"
+import { listStagedFiles } from "./git-file-list-service.js"
+import { assertGitSuccess, ensureGitRepository, GitCommandError, git } from "./git-service.js"
 import { type GitExecResult, MAX_COMMIT_MESSAGE_DIFF_CHARS } from "./types.js"
 
-async function hasStagedChanges(pi: ExtensionAPI, cwd: string, path: string, signal?: AbortSignal): Promise<boolean> {
-  const result = await git(pi, cwd, ["diff", "--cached", "--quiet", "--", path], signal)
-  if (result.code > 1) {
-    throw new Error(compactGitOutput(result) || `git diff --cached failed for ${path}`)
+export type IndexPathspec = string | readonly string[]
+
+function indexPaths(pathspec: IndexPathspec): string[] {
+  const paths = [...new Set(typeof pathspec === "string" ? [pathspec] : pathspec)].filter(Boolean)
+  if (paths.length === 0) {
+    throw new Error("No file path was selected")
   }
-  return result.code === 1
+  return paths
 }
 
-async function unstageFile(pi: ExtensionAPI, cwd: string, path: string, signal?: AbortSignal): Promise<void> {
-  const restoreArgs = ["restore", "--staged", "--", path]
-  const restoreResult = await git(pi, cwd, restoreArgs, signal)
-  if (restoreResult.code === 0) {
-    return
-  }
-  await unstageFileWithoutHead(pi, cwd, path, signal, restoreResult)
+function displayPath(paths: string[]): string {
+  return paths[0] ?? "selected file"
 }
 
-async function unstageFileWithoutHead(
+async function runFirstSuccessfulIndexCommand(
   pi: ExtensionAPI,
-  cwd: string,
-  path: string,
-  signal: AbortSignal | undefined,
-  restoreResult: GitExecResult,
+  root: string,
+  commands: string[][],
+  signal?: AbortSignal,
 ): Promise<void> {
-  const resetArgs = ["reset", "--", path]
-  const resetResult = await git(pi, cwd, resetArgs, signal)
-  if (resetResult.code === 0) {
-    return
+  let lastFailure: { args: string[]; result: GitExecResult } | undefined
+  for (const args of commands) {
+    const result = await git(pi, root, args, signal)
+    if (result.killed) {
+      throw new GitCommandError(result, args, root)
+    }
+    if (result.code === 0) {
+      return
+    }
+    lastFailure = { args, result }
   }
-  const rmCachedArgs = ["rm", "--cached", "--", path]
-  const rmCachedResult = await git(pi, cwd, rmCachedArgs, signal)
-  if (rmCachedResult.code === 0) {
-    return
+  if (!lastFailure) {
+    throw new Error("No index command was provided")
   }
-  throw new Error(compactGitOutput(rmCachedResult) || compactGitOutput(resetResult) || compactGitOutput(restoreResult))
+  throw new GitCommandError(lastFailure.result, lastFailure.args, root)
 }
 
-async function allChangesAreStaged(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<boolean> {
-  const stagedFiles = await listStagedFiles(pi, root, signal)
-  if (stagedFiles.size === 0) {
-    return false
-  }
-  const unstagedResult = await git(pi, root, ["diff", "--quiet", "--"], signal)
-  if (unstagedResult.code > 1) {
-    throw new Error(compactGitOutput(unstagedResult) || "git diff --quiet failed")
-  }
-  const untrackedFiles = await listUntrackedFiles(pi, root, signal)
-  return unstagedResult.code === 0 && untrackedFiles.length === 0
+function unstageCommands(paths: string[]): string[][] {
+  return [
+    ["restore", "--staged", "--", ...paths],
+    ["reset", "--", ...paths],
+    ["rm", "--cached", "-r", "-f", "--", ...paths],
+  ]
 }
 
-async function unstageAllChanges(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<string> {
-  const restoreArgs = ["restore", "--staged", "--", "."]
-  const restoreResult = await git(pi, root, restoreArgs, signal)
-  if (restoreResult.code === 0) {
-    return "Unstaged all changes"
-  }
-  const resetArgs = ["reset", "--", "."]
-  const resetResult = await git(pi, root, resetArgs, signal)
-  if (resetResult.code === 0) {
-    return "Unstaged all changes"
-  }
-  throw new Error(compactGitOutput(resetResult) || compactGitOutput(restoreResult) || "Could not unstage changes")
+async function stagePaths(pi: ExtensionAPI, root: string, paths: string[], signal?: AbortSignal): Promise<void> {
+  await runFirstSuccessfulIndexCommand(
+    pi,
+    root,
+    [
+      ["add", "--all", "--", ...paths],
+      ["add", "--update", "--", ...paths],
+    ],
+    signal,
+  )
 }
 
-export async function stageOrUnstageFile(
+export async function stageRemainingFile(
   pi: ExtensionAPI,
   cwd: string,
-  path: string,
+  pathspec: IndexPathspec,
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await ensureGitRepository(pi, cwd, signal)
   if (!root) {
     throw new Error("Not a git repository")
   }
-  if (await hasStagedChanges(pi, root, path, signal)) {
-    await unstageFile(pi, root, path, signal)
-    return `Unstaged ${path}`
-  }
-  const addArgs = ["add", "--", path]
-  assertGitSuccess(await git(pi, root, addArgs, signal), addArgs)
-  return `Staged ${path}`
+  const paths = indexPaths(pathspec)
+  await stagePaths(pi, root, paths, signal)
+  return `Staged remaining changes in ${displayPath(paths)}`
 }
 
-export async function toggleAllChangesStaged(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+export async function unstageFile(
+  pi: ExtensionAPI,
+  cwd: string,
+  pathspec: IndexPathspec,
+  signal?: AbortSignal,
+): Promise<string> {
   const root = await ensureGitRepository(pi, cwd, signal)
   if (!root) {
     throw new Error("Not a git repository")
   }
-  if (await allChangesAreStaged(pi, root, signal)) {
-    return unstageAllChanges(pi, root, signal)
+  const paths = indexPaths(pathspec)
+  await runFirstSuccessfulIndexCommand(pi, root, unstageCommands(paths), signal)
+  return `Unstaged ${displayPath(paths)}`
+}
+
+export async function stageAllRemaining(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
   }
   const args = ["add", "--all"]
-  assertGitSuccess(await git(pi, root, args, signal), args)
-  return "Staged all changes"
+  assertGitSuccess(await git(pi, root, args, signal), args, root)
+  return "Staged all remaining changes"
+}
+
+export async function unstageAll(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+  const root = await ensureGitRepository(pi, cwd, signal)
+  if (!root) {
+    throw new Error("Not a git repository")
+  }
+  await runFirstSuccessfulIndexCommand(pi, root, unstageCommands(["."]), signal)
+  return "Unstaged all changes"
 }
 
 export async function getStagedPaths(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<Set<string>> {
@@ -112,25 +122,22 @@ export async function stagedDiffForCommitMessage(pi: ExtensionAPI, cwd: string, 
   if (!root) {
     throw new Error("Not a git repository")
   }
-  const statResult = await git(pi, root, ["diff", "--cached", "--stat", "--color=never"], signal)
-  const diffResult = await git(
-    pi,
-    root,
-    [
-      "-c",
-      "core.quotepath=false",
-      "diff",
-      "--no-ext-diff",
-      "--find-renames",
-      "--find-copies",
-      "--color=never",
-      "--cached",
-      "--",
-    ],
-    signal,
-  )
-  assertGitSuccess(statResult, ["diff", "--cached", "--stat", "--color=never"])
-  assertGitSuccess(diffResult, ["diff", "--cached", "--"])
+  const statArgs = ["diff", "--cached", "--stat", "--color=never"]
+  const diffArgs = [
+    "-c",
+    "core.quotepath=false",
+    "diff",
+    "--no-ext-diff",
+    "--find-renames",
+    "--find-copies",
+    "--color=never",
+    "--cached",
+    "--",
+  ]
+  const statResult = await git(pi, root, statArgs, signal)
+  const diffResult = await git(pi, root, diffArgs, signal)
+  assertGitSuccess(statResult, statArgs, root)
+  assertGitSuccess(diffResult, diffArgs, root)
   const diff = [statResult.stdout.trim(), diffResult.stdout.trim()].filter(Boolean).join("\n\n")
   if (!diff) {
     throw new Error("No staged changes to summarize")

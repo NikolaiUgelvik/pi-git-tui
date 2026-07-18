@@ -13,7 +13,7 @@ export async function runGitCommand(
     throw new Error("Not a git repository")
   }
   const result = await git(pi, root, command.args, signal)
-  assertGitSuccess(result, command.args)
+  assertGitSuccess(result, command.args, root)
   const output = compactGitOutput(result)
   return output ? `${command.label} complete: ${output}` : `${command.label} complete`
 }

@@ -109,6 +109,13 @@ test("search filters branches by name", () => {
   assert.equal(controller.list.filteredCount, 1)
 })
 
+test("printable punctuation belongs to branch search", () => {
+  const { controller } = createController()
+  controller.open(sampleBranches)
+  controller.handleInput("?*q")
+  assert.equal(controller.list.searchQuery, "?*q")
+})
+
 test("backspace removes last search character", () => {
   const { controller } = createController()
   controller.open(sampleBranches)
@@ -199,11 +206,12 @@ test("escape closes the picker", () => {
   assert.equal(h.controller.state, "closed")
 })
 
-test("q key closes the picker", () => {
+test("q belongs to the branch search field", () => {
   const h = createController()
   h.controller.open(sampleBranches)
   h.controller.handleInput("q")
-  assert.equal(h.closed, true)
+  assert.equal(h.closed, false)
+  assert.equal(h.controller.list.searchQuery, "q")
 })
 
 // --- Create mode ---
@@ -275,13 +283,14 @@ test("escape in create mode returns to open state", () => {
   assert.equal(controller.state, "open")
 })
 
-test("q in create mode returns to open state", () => {
+test("q in create mode is part of the branch name", () => {
   const { controller } = createController()
   controller.open(sampleBranches)
   controller.handleInput("\x0e")
   controller.handleInput("new-branch")
   controller.handleInput("q")
-  assert.equal(controller.state, "open")
+  assert.equal(controller.state, "create")
+  assert.equal(controller.branchCreateName, "new-branchq")
 })
 
 // --- Loading state ---

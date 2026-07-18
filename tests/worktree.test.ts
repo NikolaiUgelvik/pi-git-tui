@@ -6,9 +6,10 @@ import { setImmediate as tick } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { listWorktrees, parseWorktreeList } from "../src/git-extras.js"
-import type { DiffDocument, GitExecResult } from "../src/types.js"
+import type { GitExecResult } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { HELP_ACTIONS } from "../src/viewer-help.js"
+import { workingDocument } from "./helpers/viewer.js"
 
 type ExecCall = { cmd: string; args: string[]; cwd: string | undefined }
 
@@ -42,14 +43,7 @@ const theme = {
   bold: (text: string) => text,
 } as Theme
 
-const initialDocument: DiffDocument = {
-  mode: "working",
-  title: "Working tree vs HEAD",
-  subtitle: "/repo-main (main)",
-  raw: "",
-  files: [],
-  repositoryState: "ready",
-}
+const initialDocument = workingDocument("/repo-main")
 
 async function flushAsyncViewerWork(): Promise<void> {
   await tick()
@@ -63,9 +57,11 @@ function createWorktreeSwitchPi(calls: ExecCall[]): ExtensionAPI {
     ["rev-parse --verify HEAD", () => gitResult("1234567\n")],
     ["branch --show-current", () => gitResult("feature-abc\n")],
     ["ls-files --others --exclude-standard -z", () => gitResult("")],
-    ["diff --cached --name-only -z", () => gitResult("")],
     ["diff --name-only --diff-filter=U -z", () => gitResult("")],
-    ["rev-list --left-right --count @{upstream}...HEAD", () => gitResult("", 1)],
+    [
+      "rev-list --left-right --count @{upstream}...HEAD",
+      () => gitResult("", 128, "fatal: no upstream configured for branch 'feature-abc'"),
+    ],
   ])
   return createPi((args, cwd) => {
     calls.push({ cmd: "git", args, cwd })

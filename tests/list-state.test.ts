@@ -159,6 +159,15 @@ test("FilterableListState resets selection and scroll when search changes", () =
   assert.equal(state.searchQuery, "")
 })
 
+test("FilterableListState search deletion removes a complete grapheme", () => {
+  const state = new FilterableListState(["éclair"], (item) => item)
+  state.appendSearchChar("e\u0301")
+
+  state.backspaceSearch()
+
+  assert.equal(state.searchQuery, "")
+})
+
 test("FilterableListState clamps selection and returns visible items", () => {
   const state = new FilterableListState(["a", "b", "c"], (item) => item)
   state.selectedIndex = 10

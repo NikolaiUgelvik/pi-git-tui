@@ -22,6 +22,7 @@ function createController(
   applySpy?: (ref: string) => void,
   popSpy?: (ref: string) => void,
   dropSpy?: (ref: string) => void,
+  retryListSpy?: () => void,
 ) {
   let closed = false
   let renderCalled = false
@@ -37,6 +38,9 @@ function createController(
     },
     onDrop: async (ref: string) => {
       if (dropSpy) dropSpy(ref)
+    },
+    onRetryList: () => {
+      if (retryListSpy) retryListSpy()
     },
     onClose: () => {
       closed = true
@@ -118,6 +122,13 @@ test("search filters stashes by message", () => {
   controller.open(sampleStashes)
   controller.handleInput("refactor")
   assert.equal(controller.list.filteredCount, 1)
+})
+
+test("printable punctuation belongs to stash search", () => {
+  const { controller } = createController()
+  controller.open(sampleStashes)
+  controller.handleInput("?*q")
+  assert.equal(controller.list.searchQuery, "?*q")
 })
 
 test("backspace removes last search character", () => {
@@ -229,13 +240,28 @@ test("escape in confirm mode returns to open state", () => {
   assert.equal(controller.state, "open")
 })
 
-test("q in confirm mode returns to open state", () => {
+test("q in confirm mode remains a legacy cancel alias", () => {
   const { controller } = createController()
   controller.open(sampleStashes)
   controller.handleInput("\x1b[B")
   controller.handleInput("\x10")
   controller.handleInput("q")
   assert.equal(controller.state, "open")
+})
+
+test("confirmation cancellation preserves stash filter and selection", () => {
+  const { controller } = createController()
+  controller.open(sampleStashes)
+  controller.handleInput("feature")
+  controller.list.selectedIndex = 0
+  controller.handleInput("\x10")
+
+  controller.handleInput("\x1b")
+
+  assert.equal(controller.state, "open")
+  assert.equal(controller.list.searchQuery, "feature")
+  assert.equal(controller.list.selectedIndex, 0)
+  assert.equal(controller.list.get(0)?.stash?.ref, "stash@{0}")
 })
 
 // --- Escape / q ---
@@ -248,21 +274,34 @@ test("escape closes the picker", () => {
   assert.equal(h.controller.state, "closed")
 })
 
-test("q key closes the picker", () => {
+test("q belongs to the stash search field", () => {
   const h = createController()
   h.controller.open(sampleStashes)
   h.controller.handleInput("q")
-  assert.equal(h.closed, true)
+  assert.equal(h.closed, false)
+  assert.equal(h.controller.state, "open")
+  assert.equal(h.controller.list.searchQuery, "q")
 })
 
 // --- Loading state ---
 
-test("handleInput ignores input during loading state", () => {
+test("handleInput ignores text during loading state", () => {
   const { controller } = createController()
   controller.open(sampleStashes)
   controller.state = "loading"
   controller.handleInput("test")
   assert.equal(controller.list.searchQuery, "")
+})
+
+test("escape closes during loading state", () => {
+  const harness = createController()
+  harness.controller.open(sampleStashes)
+  harness.controller.state = "loading"
+
+  harness.controller.handleInput("\x1b")
+
+  assert.equal(harness.controller.state, "closed")
+  assert.equal(harness.closed, true)
 })
 
 // --- Refresh stashes ---
@@ -276,7 +315,31 @@ test("refreshStashes updates the list", () => {
   assert.equal(controller.list.items.length, 2)
 })
 
+test("list warning preserves rows and r retries listing only", () => {
+  let retries = 0
+  const { controller } = createController(undefined, undefined, undefined, undefined, () => {
+    retries += 1
+  })
+  controller.open(sampleStashes)
+  controller.showListWarning("stash list failed")
+
+  assert.equal(controller.list.items.length, 3)
+  assert.match(controller.renderOverlayLines(20, 100, mockTheme).join("\n"), /stash list failed.*r retry list/u)
+
+  controller.handleInput("r")
+  assert.equal(retries, 1)
+  assert.equal(controller.list.searchQuery, "")
+})
+
 // --- Rendering ---
+
+function renderStashConfirmation(input: "\x10" | "\x04"): string {
+  const { controller } = createController()
+  controller.open(sampleStashes)
+  controller.handleInput("\x1b[B")
+  controller.handleInput(input)
+  return controller.renderOverlayLines(20, 120, mockTheme).join("\n")
+}
 
 test("renderOverlayLines returns lines array", () => {
   const { controller } = createController()
@@ -294,24 +357,24 @@ test("renderOverlayLines includes title", () => {
   assert.ok(titleLine)
 })
 
-test("renderOverlayLines shows confirm title for pop", () => {
-  const { controller } = createController()
-  controller.open(sampleStashes)
-  controller.handleInput("\x1b[B")
-  controller.handleInput("\x10") // Ctrl+P
-  const lines = controller.renderOverlayLines(20, 100, mockTheme)
-  const titleLine = lines.find((line) => line.includes("Pop stash?"))
-  assert.ok(titleLine)
+test("pop confirmation names the stash and explains application/removal", () => {
+  const frame = renderStashConfirmation("\x10")
+  assert.match(frame, /Pop stash\?/u)
+  assert.match(frame, /Stash: stash@\{0\}/u)
+  assert.match(frame, /Message: WIP: feature work/u)
+  assert.match(frame, /removes the stash only after a successful application/u)
+  assert.match(frame.replace(/[│\s]+/gu, " "), /conflicts may modify the working tree/iu)
+  assert.match(frame, /Enter: Pop stash • Esc: Cancel/u)
 })
 
-test("renderOverlayLines shows confirm title for drop", () => {
-  const { controller } = createController()
-  controller.open(sampleStashes)
-  controller.handleInput("\x1b[B")
-  controller.handleInput("\x04") // Ctrl+D
-  const lines = controller.renderOverlayLines(20, 100, mockTheme)
-  const titleLine = lines.find((line) => line.includes("Drop stash?"))
-  assert.ok(titleLine)
+test("drop confirmation names the stash and explains permanent deletion", () => {
+  const frame = renderStashConfirmation("\x04")
+  assert.match(frame, /Drop stash\?/u)
+  assert.match(frame, /Stash: stash@\{0\}/u)
+  assert.match(frame, /Message: WIP: feature work/u)
+  assert.match(frame, /Permanently deletes this stash/u)
+  assert.match(frame, /cannot be undone/iu)
+  assert.match(frame, /Enter: Drop stash • Esc: Cancel/u)
 })
 
 test("renderOverlayLines shows loading message", () => {
