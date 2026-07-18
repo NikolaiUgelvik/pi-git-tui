@@ -31,13 +31,13 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
     this.commitPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      const commits = await loadCommits(this.pi, this.activePath(), this.ctx.signal)
+      const commits = await loadCommits(this.pi, this.activePath(), this.viewerSignal)
       this.pickerState = "open"
       this.commitPickerController.open(commits)
     } catch (error) {
       this.pickerState = "closed"
       this.commitPickerController.state = "closed"
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
       this.loadingMessage = undefined
       this.commitPickerController.loadingMessage = undefined
@@ -53,44 +53,62 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
   }
 
   protected async selectWorkingTree(): Promise<void> {
+    if (this.mutationActive()) return
+    const cwd = this.activePath()
+    let disposition: "applied" | "superseded" | undefined
     this.pickerState = "loading"
     this.commitPickerController.state = "loading"
     this.loadingMessage = "Loading working tree…"
     this.commitPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
+      disposition = await this.loadLatestDocument({
+        cwd,
+        target: `working:${cwd}`,
+        selection: "first",
+        load: (signal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, signal)),
+      })
+      if (disposition === "applied") this.error = undefined
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
-      this.pickerState = "closed"
-      this.commitPickerController.state = "closed"
-      this.loadingMessage = undefined
-      this.commitPickerController.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.pickerState = "closed"
+        this.commitPickerController.state = "closed"
+        this.loadingMessage = undefined
+        this.commitPickerController.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 
   protected async selectCommit(commit: CommitSummary): Promise<void> {
+    if (this.mutationActive()) return
+    const cwd = this.activePath()
+    let disposition: "applied" | "superseded" | undefined
     this.pickerState = "loading"
     this.commitPickerController.state = "loading"
     this.loadingMessage = `Loading ${commit.hash}…`
     this.commitPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      this.document = await loadCommitDiff(this.pi, this.activePath(), commit, this.ctx.signal)
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
+      disposition = await this.loadLatestDocument({
+        cwd,
+        target: `commit:${cwd}:${commit.hash}`,
+        selection: "first",
+        load: (signal) => loadCommitDiff(this.pi, cwd, commit, signal),
+      })
+      if (disposition === "applied") this.error = undefined
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
-      this.pickerState = "closed"
-      this.commitPickerController.state = "closed"
-      this.loadingMessage = undefined
-      this.commitPickerController.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.pickerState = "closed"
+        this.commitPickerController.state = "closed"
+        this.loadingMessage = undefined
+        this.commitPickerController.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 

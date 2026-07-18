@@ -9,6 +9,10 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
   protected confirmAction: ConfirmAction | undefined
   protected confirmFile: DiffFile | undefined
 
+  protected override isOperationLoading(): boolean {
+    return this.confirmState === "loading" || super.isOperationLoading()
+  }
+
   protected featureHelpContext(): HelpContext | undefined {
     return this.confirmState !== "closed" ? "confirmDialog" : undefined
   }
@@ -37,6 +41,9 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
     if (data !== "I") {
       return false
     }
+    if (this.mutationActive()) {
+      return true
+    }
     if (this.document.repositoryState !== "missing") {
       return true
     }
@@ -53,6 +60,9 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
     if (data !== "D") {
       return false
     }
+    if (this.mutationActive()) {
+      return true
+    }
     if (this.document.mode !== "working") {
       this.error = "Discard is only available in the working tree"
       this.statusMessage = undefined
@@ -61,6 +71,18 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
     }
     const file = this.document.files[this.selectedFileIndex]
     if (!file) {
+      return true
+    }
+    if (file.omission) {
+      this.error = `Cannot discard ${file.path} because its diff was omitted`
+      this.statusMessage = undefined
+      this.requestRender()
+      return true
+    }
+    if (file.submodule?.startsWith("S")) {
+      this.error = `Cannot discard ${file.path}: manage nested changes inside the submodule`
+      this.statusMessage = undefined
+      this.requestRender()
       return true
     }
     this.error = undefined
@@ -98,33 +120,69 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
 
   protected async runConfirmedAction(): Promise<void> {
     const action = this.confirmAction
+    const kind = action === "init" ? "initialize" : "discard"
+    await this.runMutation(kind, (signal) => this.executeConfirmedMutation(action, signal))
+  }
+
+  private confirmedSelection(action: ConfirmAction | undefined): "first" | "preserve-current-path" {
+    return action === "init" ? "first" : "preserve-current-path"
+  }
+
+  private completeConfirmedMutation(message: string): void {
+    this.statusMessage = message
+    this.confirmState = "closed"
+    this.confirmAction = undefined
+    this.confirmFile = undefined
+  }
+
+  private async reconcileConfirmedFailure(
+    cwd: string,
+    signal: AbortSignal,
+    action: ConfirmAction | undefined,
+  ): Promise<"applied" | "superseded" | undefined> {
+    const disposition = await this.refreshWorkingTreeAfterMutationFailure(cwd, signal, this.confirmedSelection(action))
+    if (disposition === "applied") this.confirmState = "open"
+    return disposition
+  }
+
+  private async executeConfirmedMutation(action: ConfirmAction | undefined, signal: AbortSignal): Promise<void> {
+    const cwd = this.activePath()
+    let disposition: "applied" | "superseded" | undefined
     this.confirmState = "loading"
     this.loadingMessage = this.confirmLoadingMessage()
     this.error = undefined
     this.statusMessage = undefined
     this.requestRender()
     try {
-      this.statusMessage = await this.executeConfirmedAction(action)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.confirmState = "closed"
-      this.confirmAction = undefined
-      this.confirmFile = undefined
+      const message = await this.executeConfirmedAction(action, cwd, signal)
+      disposition = await this.loadLatestDocument({
+        cwd,
+        target: `working:${cwd}`,
+        selection: this.confirmedSelection(action),
+        load: (loadSignal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, loadSignal)),
+        operationSignal: signal,
+      })
+      if (disposition === "applied") this.completeConfirmedMutation(message)
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      this.confirmState = "open"
+      if (this.setAsyncError(error)) disposition = await this.reconcileConfirmedFailure(cwd, signal, action)
     } finally {
-      this.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 
-  protected executeConfirmedAction(action: ConfirmAction | undefined): Promise<string> {
+  protected executeConfirmedAction(
+    action: ConfirmAction | undefined,
+    cwd: string,
+    signal: AbortSignal,
+  ): Promise<string> {
     if (action === "init") {
-      return initializeGitRepository(this.pi, this.activePath(), this.ctx.signal)
+      return initializeGitRepository(this.pi, cwd, signal)
     }
     if (action === "discard" && this.confirmFile) {
-      return discardFileChanges(this.pi, this.activePath(), this.confirmFile, this.ctx.signal)
+      return discardFileChanges(this.pi, cwd, this.confirmFile, signal)
     }
     return Promise.reject(new Error("No confirmed action selected"))
   }

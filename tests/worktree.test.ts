@@ -1,22 +1,26 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { setImmediate as tick } from "node:timers/promises"
 import { fileURLToPath } from "node:url"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { listWorktrees, parseWorktreeList } from "../src/git-extras.js"
-import type { DiffDocument, GitExecResult } from "../src/types.js"
+import type { DiffDocument } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { HELP_ACTIONS } from "../src/viewer-help.js"
+import { createTempGitRepository, createTrackingGitPi, runFixtureGit } from "./helpers/temp-git-repository.js"
 
 type ExecCall = { cmd: string; args: string[]; cwd: string | undefined }
 
-function gitResult(stdout = "", code = 0, stderr = ""): GitExecResult {
+type RawGitResult = { stdout: string; stderr: string; code: number; killed: boolean }
+
+function gitResult(stdout = "", code = 0, stderr = ""): RawGitResult {
   return { stdout, stderr, code, killed: false }
 }
 
-function createPi(handler: (args: string[], cwd: string | undefined) => GitExecResult): ExtensionAPI {
+function createPi(handler: (args: string[], cwd: string | undefined) => RawGitResult): ExtensionAPI {
   const pi = {
     exec: async (cmd: string, args: string[], options?: { cwd?: string }) => {
       assert.equal(cmd, "git")
@@ -48,6 +52,9 @@ const initialDocument: DiffDocument = {
   subtitle: "/repo-main (main)",
   raw: "",
   files: [],
+  omittedFileCount: 0,
+  capturedPatchBytes: 0,
+  capturedPatchLines: 0,
   repositoryState: "ready",
 }
 
@@ -57,15 +64,13 @@ async function flushAsyncViewerWork(): Promise<void> {
 }
 
 function createWorktreeSwitchPi(calls: ExecCall[]): ExtensionAPI {
-  const responses = new Map<string, (cwd: string | undefined) => GitExecResult>([
+  const responses = new Map<string, (cwd: string | undefined) => RawGitResult>([
     ["rev-parse --show-toplevel", (cwd) => gitResult(`${cwd ?? "/repo-main"}\n`)],
-    ["worktree list --porcelain", () => gitResult(worktreePorcelain)],
-    ["rev-parse --verify HEAD", () => gitResult("1234567\n")],
-    ["branch --show-current", () => gitResult("feature-abc\n")],
-    ["ls-files --others --exclude-standard -z", () => gitResult("")],
-    ["diff --cached --name-only -z", () => gitResult("")],
-    ["diff --name-only --diff-filter=U -z", () => gitResult("")],
-    ["rev-list --left-right --count @{upstream}...HEAD", () => gitResult("", 1)],
+    ["worktree list --porcelain -z", () => gitResult(worktreePorcelain)],
+    [
+      "status --porcelain=v2 --branch -z --untracked-files=all --ignore-submodules=none --find-renames",
+      () => gitResult("# branch.oid 1234567890123456789012345678901234567890\0# branch.head feature-abc\0"),
+    ],
   ])
   return createPi((args, cwd) => {
     calls.push({ cmd: "git", args, cwd })
@@ -83,6 +88,13 @@ test("parseWorktreeList parses porcelain worktree entries", () => {
   ])
 })
 
+test("parseWorktreeList preserves NUL-delimited whitespace and Unicode paths", () => {
+  const path = "/tmp/linked space\tline\nλ"
+  const output = [`worktree ${path}`, "HEAD abcdef0", "branch refs/heads/feature", "", ""].join("\0")
+
+  assert.deepEqual(parseWorktreeList(output), [{ path, head: "abcdef0", branch: "feature" }])
+})
+
 test("listWorktrees runs from repository root and parses porcelain output", async () => {
   const calls: ExecCall[] = []
   const pi = createPi((args, cwd) => {
@@ -90,7 +102,7 @@ test("listWorktrees runs from repository root and parses porcelain output", asyn
     if (args.join(" ") === "rev-parse --show-toplevel") {
       return gitResult("/repo-main\n")
     }
-    if (args.join(" ") === "worktree list --porcelain") {
+    if (args.join(" ") === "worktree list --porcelain -z") {
       assert.equal(cwd, "/repo-main")
       return gitResult(worktreePorcelain)
     }
@@ -103,8 +115,28 @@ test("listWorktrees runs from repository root and parses porcelain output", asyn
   ])
   assert.deepEqual(
     calls.map((call) => call.args.join(" ")),
-    ["rev-parse --show-toplevel", "worktree list --porcelain"],
+    ["rev-parse --show-toplevel", "worktree list --porcelain -z"],
   )
+})
+
+test("listWorktrees preserves a real linked path containing whitespace and Unicode", async () => {
+  const repo = await createTempGitRepository()
+  const linkedPath = `${repo.path}-linked space\tline\nλ`
+  try {
+    await runFixtureGit(repo.path, ["branch", "feature"])
+    await runFixtureGit(repo.path, ["worktree", "add", linkedPath, "feature"])
+
+    const worktrees = await listWorktrees(createTrackingGitPi().pi, repo.path)
+
+    assert.equal(
+      worktrees.some((worktree) => worktree.path === linkedPath && worktree.branch === "feature"),
+      true,
+    )
+  } finally {
+    await runFixtureGit(repo.path, ["worktree", "remove", "--force", linkedPath]).catch(() => undefined)
+    await rm(linkedPath, { recursive: true, force: true })
+    await repo.cleanup()
+  }
 })
 
 test("viewer help advertises worktree picker controls", () => {

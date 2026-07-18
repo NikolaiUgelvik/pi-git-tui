@@ -156,45 +156,70 @@ export class DiffViewerCommitDialog extends DiffViewerCommitPicker {
   }
 
   protected async generateCommitMessageIntoDialog(): Promise<void> {
+    const cwd = this.activePath()
+    let disposition: "applied" | "superseded" | undefined
     this.commitDialogState = "loading"
     this.loadingMessage = "Generating commit message…"
     this.error = undefined
     this.statusMessage = undefined
     this.requestRender()
     try {
-      this.commitMessage = await generateCommitMessage(this.pi, this.activeContext())
-      this.commitMessageCaret = this.commitMessageLength()
+      disposition = await this.operationCoordinator.applyLatest(
+        `commit-message:${cwd}`,
+        (signal) => generateCommitMessage(this.pi, this.contextFor(cwd, signal)),
+        (message) => {
+          this.commitMessage = message
+          this.commitMessageCaret = this.commitMessageLength()
+        },
+      )
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
-      this.commitDialogState = "open"
-      this.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.commitDialogState = "open"
+        this.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 
   protected async commitStagedChanges(message: string): Promise<void> {
-    this.commitDialogState = "loading"
-    this.loadingMessage = "Committing staged changes…"
-    this.error = undefined
-    this.statusMessage = undefined
-    this.requestRender()
-    try {
-      const output = await runGitCommit(this.pi, this.activePath(), message, this.ctx.signal, this.commitAmend)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.commitMessage = ""
-      this.commitMessageCaret = 0
-      this.commitAmend = false
-      this.commitDialogState = "closed"
-      this.statusMessage = output
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      this.commitDialogState = "open"
-    } finally {
-      this.loadingMessage = undefined
+    await this.runMutation("commit", async (signal) => {
+      const cwd = this.activePath()
+      let disposition: "applied" | "superseded" | undefined
+      this.commitDialogState = "loading"
+      this.loadingMessage = "Committing staged changes…"
+      this.error = undefined
+      this.statusMessage = undefined
       this.requestRender()
-    }
+      try {
+        const output = await runGitCommit(this.pi, cwd, message, signal, this.commitAmend)
+        disposition = await this.loadLatestDocument({
+          cwd,
+          target: `working:${cwd}`,
+          selection: "first",
+          load: (loadSignal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, loadSignal)),
+          operationSignal: signal,
+        })
+        if (disposition === "applied") {
+          this.commitMessage = ""
+          this.commitMessageCaret = 0
+          this.commitAmend = false
+          this.commitDialogState = "closed"
+          this.statusMessage = output
+        }
+      } catch (error) {
+        if (this.setAsyncError(error)) {
+          disposition = await this.refreshWorkingTreeAfterMutationFailure(cwd, signal)
+          if (disposition === "applied") this.commitDialogState = "open"
+        }
+      } finally {
+        if (disposition !== "superseded") {
+          this.loadingMessage = undefined
+          this.requestRender()
+        }
+      }
+    })
   }
 
   protected renderCommitDialogOverlay(baseLines: string[], width: number): string[] {

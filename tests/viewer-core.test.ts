@@ -1,13 +1,16 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
+import { GitAbortError } from "../src/git-service.js"
 import { renderScrollbar } from "../src/scrollbar.js"
 import type { DiffDocument } from "../src/types.js"
-import { DiffViewerCore } from "../src/viewer-core.js"
+import { DiffViewer } from "../src/viewer.js"
+import type { DiffViewerCore } from "../src/viewer-core.js"
 import { DiffViewerFrame } from "../src/viewer-frame.js"
+import { DiffViewerNavigation } from "../src/viewer-navigation.js"
 import { DiffViewerOverlayBase } from "../src/viewer-overlay-base.js"
 
-class TestViewerCore extends DiffViewerCore {
+class TestViewerCore extends DiffViewerNavigation {
   visibleDiffRows(): number {
     return this.viewHeight()
   }
@@ -24,12 +27,42 @@ class TestViewerCore extends DiffViewerCore {
     return this.handleFileStageToggle(data)
   }
 
+  stageAllInput(data: string): boolean {
+    return this.handleStageAllInput(data)
+  }
+
   arrowDelta(data: string): number {
     return this.arrowScrollDelta(data)
   }
 
   status(): { error: string | undefined; statusMessage: string | undefined } {
     return { error: this.error, statusMessage: this.statusMessage }
+  }
+
+  closeInput(data: string): boolean {
+    return this.handleCloseInput(data)
+  }
+
+  operationSignal(): AbortSignal {
+    return this.viewerSignal
+  }
+
+  asyncError(error: unknown): void {
+    this.showAsyncError(error)
+  }
+}
+
+class TestRoutedViewer extends DiffViewer {
+  beginLoading(): void {
+    this.commandMenuState = "loading"
+  }
+
+  operationSignal(): AbortSignal {
+    return this.viewerSignal
+  }
+
+  requestAfterClose(): void {
+    this.requestRender()
   }
 }
 
@@ -41,6 +74,14 @@ class TestFrameViewer extends DiffViewerFrame {
   diffLines(width: number, height: number, scroll = 0): string[] {
     this.diffScroll = scroll
     return this.renderDiff(width, height)
+  }
+
+  header(width: number): string {
+    return this.renderHeader(width)
+  }
+
+  footer(width: number): string {
+    return this.renderFooter(width)
   }
 }
 
@@ -62,6 +103,9 @@ const emptyDocument: DiffDocument = {
   subtitle: "Working tree",
   raw: "",
   files: [],
+  omittedFileCount: 0,
+  capturedPatchBytes: 0,
+  capturedPatchLines: 0,
 }
 
 function createViewer<T extends DiffViewerCore>(
@@ -191,12 +235,172 @@ test("core stage toggle reports unsupported modes without mutating status", () =
   })
 })
 
+test("omitted entries cannot launch file staging", () => {
+  const viewer = createViewer(TestViewerCore, 80, {
+    ...emptyDocument,
+    omittedFileCount: 1,
+    files: [
+      {
+        ...file("huge.txt"),
+        omission: { reason: "file-too-large", message: "Too large." },
+      },
+    ],
+  })
+
+  assert.equal(viewer.stageToggleInput("\n"), true)
+  assert.deepEqual(viewer.status(), {
+    error: "Cannot stage huge.txt because its diff was omitted",
+    statusMessage: undefined,
+  })
+})
+
+test("dirty submodules block file and repository-wide staging with explicit guidance", () => {
+  const viewer = createViewer(TestViewerCore, 80, {
+    ...emptyDocument,
+    files: [{ ...file("vendor/module"), submodule: "S.M." }],
+  })
+
+  assert.equal(viewer.stageToggleInput("\n"), true)
+  assert.deepEqual(viewer.status(), {
+    error: "Cannot stage vendor/module: manage nested changes inside the submodule",
+    statusMessage: undefined,
+  })
+
+  assert.equal(viewer.stageAllInput("\x1b[13;2u"), true)
+  assert.deepEqual(viewer.status(), {
+    error: "Cannot stage all while nested submodule changes are present",
+    statusMessage: undefined,
+  })
+})
+
+test("omitted entries prevent repository-wide staging", () => {
+  const viewer = createViewer(TestViewerCore, 80, {
+    ...emptyDocument,
+    omittedFileCount: 1,
+    files: [
+      {
+        ...file("huge.txt"),
+        omission: { reason: "file-too-large", message: "Too large." },
+      },
+    ],
+  })
+
+  assert.equal(viewer.stageAllInput("\x1b[13;2u"), true)
+  assert.deepEqual(viewer.status(), {
+    error: "Cannot stage all while some diffs are omitted",
+    statusMessage: undefined,
+  })
+})
+
 test("core arrow delta maps vim-style navigation keys", () => {
   const viewer = viewerForRows(80)
 
   assert.equal(viewer.arrowDelta("k"), -1)
   assert.equal(viewer.arrowDelta("j"), 1)
   assert.equal(viewer.arrowDelta("x"), 0)
+})
+
+test("closing aborts the viewer-scoped signal before completing the UI", () => {
+  const parent = new AbortController()
+  let doneSignalWasAborted = false
+  const ctx = { cwd: "/repo", signal: parent.signal } as ExtensionContext
+  let viewer: TestViewerCore
+  viewer = new TestViewerCore(
+    {} as ExtensionAPI,
+    ctx,
+    theme,
+    emptyDocument,
+    () => {
+      doneSignalWasAborted = viewer.operationSignal().aborted
+    },
+    () => {},
+    () => 80,
+  )
+
+  assert.equal(viewer.operationSignal().aborted, false)
+  assert.equal(viewer.closeInput("q"), true)
+  assert.equal(doneSignalWasAborted, true)
+  assert.equal(viewer.operationSignal().aborted, true)
+})
+
+test("loading overlays route close input to viewer cancellation", () => {
+  let doneCalls = 0
+  let renderCalls = 0
+  const viewer = new TestRoutedViewer(
+    {} as ExtensionAPI,
+    { cwd: "/repo", signal: new AbortController().signal } as ExtensionContext,
+    theme,
+    emptyDocument,
+    () => {
+      doneCalls++
+    },
+    () => {
+      renderCalls++
+    },
+    () => 80,
+  )
+  viewer.beginLoading()
+
+  viewer.handleInput("q")
+  viewer.requestAfterClose()
+
+  assert.equal(doneCalls, 1)
+  assert.equal(viewer.operationSignal().aborted, true)
+  assert.equal(renderCalls, 0)
+})
+
+test("loading close input aborts even when contextual help is open", () => {
+  let doneCalls = 0
+  let renderCalls = 0
+  const viewer = new TestRoutedViewer(
+    {} as ExtensionAPI,
+    { cwd: "/repo", signal: new AbortController().signal } as ExtensionContext,
+    theme,
+    emptyDocument,
+    () => {
+      doneCalls++
+    },
+    () => {
+      renderCalls++
+    },
+    () => 80,
+  )
+  viewer.beginLoading()
+  viewer.handleInput("?")
+
+  viewer.handleInput("q")
+
+  assert.equal(doneCalls, 1)
+  assert.equal(viewer.operationSignal().aborted, true)
+  assert.equal(renderCalls, 1)
+})
+
+test("expected Git aborts do not become viewer errors", () => {
+  const viewer = viewerForRows(80)
+
+  viewer.asyncError(new GitAbortError(["status"]))
+
+  assert.deepEqual(viewer.status(), { error: undefined, statusMessage: undefined })
+})
+
+test("the viewer-scoped signal follows context cancellation and suppresses later renders", () => {
+  const parent = new AbortController()
+  let renders = 0
+  const viewer = new TestRoutedViewer(
+    {} as ExtensionAPI,
+    { cwd: "/repo", signal: parent.signal } as ExtensionContext,
+    theme,
+    emptyDocument,
+    () => {},
+    () => renders++,
+    () => 80,
+  )
+
+  parent.abort()
+  viewer.requestAfterClose()
+
+  assert.equal(viewer.operationSignal().aborted, true)
+  assert.equal(renders, 0)
 })
 
 test("frame diff renders structured rows and hides raw metadata", () => {
@@ -260,6 +464,33 @@ test("frame diff scrolls by formatted rows and aligns scrollbar height", () => {
       .diffLines(100, 2, 10)
       .map((line) => line.at(-1)),
     ["│", "┃"],
+  )
+})
+
+test("omission-only documents show counts, tree entries, explanations, and footer notice", () => {
+  const viewer = frameViewer({
+    ...emptyDocument,
+    omittedFileCount: 1,
+    files: [
+      {
+        ...file("huge.txt", []),
+        omission: {
+          reason: "file-too-large",
+          measuredBytes: 10 * 1024 * 1024,
+          limitBytes: 2 * 1024 * 1024,
+          message: "10 MiB exceeds the 2 MiB limit.",
+        },
+      },
+    ],
+  })
+
+  assert.equal(viewer.header(80).includes("1 file • 1 omitted"), true)
+  assert.equal(viewer.footer(160).includes("1 omitted"), true)
+  assert.equal(viewer.treeLines(40, 2)[0]?.includes("huge.txt (omitted)"), true)
+  assert.equal(viewer.treeLines(40, 2)[0]?.includes("No changes"), false)
+  assert.deepEqual(
+    viewer.diffLines(99, 2).map((line) => line.trimEnd()),
+    ['Diff omitted for "huge.txt"', "10 MiB exceeds the 2 MiB limit."],
   )
 })
 

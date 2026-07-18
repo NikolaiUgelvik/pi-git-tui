@@ -1,7 +1,13 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent"
-import { stagedDiffForCommitMessage } from "./git-index-service.js"
-import { ensureGitRepository, git } from "./git-service.js"
+import {
+  type AgentSession,
+  createAgentSession,
+  type ExtensionAPI,
+  type ExtensionContext,
+  SessionManager,
+} from "@earendil-works/pi-coding-agent"
+import { collectCommitDiffInput } from "./commit-diff-input.js"
+import { DEFAULT_COMMIT_PROMPT_BUDGET } from "./diff-budgets.js"
+import { compactGitOutput, ensureGitRepository, runGit, throwIfGitAborted } from "./git-service.js"
 
 interface AssistantTextMessage {
   role: "assistant"
@@ -69,11 +75,41 @@ function commitMessagePrompt(diff: string): string {
   return `Generate one concise Conventional Commit message for these staged changes.\n\nRequirements:\n- Return only the commit message.\n- Use a single line.\n- Keep it under 72 characters if possible.\n- Use an appropriate type such as feat, fix, docs, refactor, test, chore.\n\nStaged diff:\n${diff}`
 }
 
+export async function promptAgentWithAbort(
+  session: Pick<AgentSession, "abort" | "prompt" | "subscribe">,
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfGitAborted(signal)
+  const abortPromises: Promise<void>[] = []
+  const abortSession = () => {
+    abortPromises.push(session.abort().catch(() => undefined))
+  }
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type === "agent_start" && signal?.aborted) abortSession()
+  })
+  signal?.addEventListener("abort", abortSession, { once: true })
+  try {
+    throwIfGitAborted(signal)
+    await session.prompt(prompt, { expandPromptTemplates: false })
+    throwIfGitAborted(signal)
+  } finally {
+    signal?.removeEventListener("abort", abortSession)
+    unsubscribe()
+    await Promise.all(abortPromises)
+  }
+}
+
 export async function generateCommitMessage(pi: ExtensionAPI, ctx: ExtensionContext): Promise<string> {
   if (!ctx.model) {
     throw new Error("No model selected")
   }
-  const diff = await stagedDiffForCommitMessage(pi, ctx.cwd, ctx.signal)
+  const input = await collectCommitDiffInput(pi, ctx.cwd, DEFAULT_COMMIT_PROMPT_BUDGET, ctx.signal)
+  const prompt = commitMessagePrompt(input.text)
+  if (prompt.length > DEFAULT_COMMIT_PROMPT_BUDGET.maxPromptChars) {
+    throw new Error("Commit message prompt exceeded its configured character budget")
+  }
+  throwIfGitAborted(ctx.signal)
   const { session } = await createAgentSession({
     cwd: ctx.cwd,
     model: ctx.model,
@@ -83,9 +119,8 @@ export async function generateCommitMessage(pi: ExtensionAPI, ctx: ExtensionCont
     noTools: "all",
     tools: [],
   })
-
   try {
-    await session.prompt(commitMessagePrompt(diff), { expandPromptTemplates: false })
+    await promptAgentWithAbort(session, prompt, ctx.signal)
     const response = lastAssistantTextMessage(session.messages)
     if (!response) {
       throw new Error("Background session did not return an assistant message")
@@ -114,19 +149,6 @@ export async function runGitCommit(
     throw new Error("Not a git repository")
   }
   const args = amend ? ["commit", "--amend", "-m", message] : ["commit", "-m", message]
-  const result = await git(pi, root, args, signal)
-  if (result.code !== 0) {
-    const output = [result.stdout, result.stderr]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(" ")
-      .replace(/\s+/g, " ")
-    throw new Error(output || `git ${args.join(" ")} failed`)
-  }
-  const output = [result.stdout, result.stderr]
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-  return output || "Commit complete"
+  const result = await runGit(pi, root, args, { signal, timeoutClass: "mutation" })
+  return compactGitOutput(result) || "Commit complete"
 }

@@ -44,23 +44,20 @@ function statusGlyph(status: DiffFile["status"]): string {
 function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFile): void {
   const displayParts = info.file.path.split("/").filter(Boolean)
   addDirectoryRows(rows, seenDirs, displayParts.slice(0, -1))
+  const omission = info.file.omission ? " (omitted)" : ""
   rows.push({
-    label: `${stagedGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
+    label: `${stagedGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}${omission}`,
     fileIndex: info.index,
     depth: Math.max(0, displayParts.length - 1),
     isLast: true,
   })
 }
 
-export function buildTreeRows(files: DiffFile[]): TreeRow[] {
+export function buildTreeRows(files: readonly DiffFile[]): TreeRow[] {
   const rows: TreeRow[] = []
   const seenDirs = new Set<string>()
-  const byPath = new Map(files.map((file, index) => [file.path, { file, index }]))
-  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    const info = byPath.get(file.path)
-    if (info) {
-      addFileRow(rows, seenDirs, info)
-    }
-  }
+  const indexed = files.map((file, index) => ({ file, index }))
+  indexed.sort((left, right) => left.file.path.localeCompare(right.file.path) || left.index - right.index)
+  for (const info of indexed) addFileRow(rows, seenDirs, info)
   return rows
 }

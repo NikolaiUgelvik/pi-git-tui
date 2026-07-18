@@ -128,6 +128,44 @@ test("parseDiff marks untracked files when provided in untrackedPaths set", () =
   assert.equal(doc.files[0]?.untracked, true)
 })
 
+test("parseDiff preserves quoted paths with spaces, tabs, newlines, and Unicode", () => {
+  const path = "space λ\tline\nname.txt"
+  const encoded = "space λ\\tline\\nname.txt"
+  const raw = [
+    `diff --git "a/${encoded}" "b/${encoded}"`,
+    "new file mode 100644",
+    "index 0000000..1234567",
+    "--- /dev/null",
+    `+++ "b/${encoded}"\t`,
+    "@@ -0,0 +1 @@",
+    "+content",
+  ].join("\n")
+  const doc = buildDocument("working", "test", "test", raw, undefined, new Set(), new Set(), new Set([path]))
+
+  assert.equal(doc.files[0]?.path, path)
+  assert.equal(doc.files[0]?.untracked, true)
+})
+
+test("parseDiff decodes Git C escapes and octal UTF-8 bytes", () => {
+  const path = "bell\u0007-vertical\u000b-backslash\\-octal-λ.txt"
+  const encoded = "bell\\a-vertical\\v-backslash\\\\-octal-\\316\\273.txt"
+  const raw = [
+    `diff --git "a/${encoded}" "b/${encoded}"`,
+    `--- "a/${encoded}"`,
+    `+++ "b/${encoded}"`,
+    "@@ -1 +1 @@",
+    "-before",
+    "+after",
+  ].join("\n")
+
+  const doc = buildDocument("working", "test", "test", raw)
+
+  assert.equal(doc.files.length, 1)
+  assert.equal(doc.files[0]?.path, path)
+  assert.equal(doc.files[0]?.oldPath, path)
+  assert.equal(doc.files[0]?.newPath, path)
+})
+
 // --- parseDiff: no-HEAD case ---
 
 test("parseDiff handles no-HEAD multi-file diff with all additions", () => {
@@ -176,13 +214,21 @@ test("parseDiff returns empty array for whitespace-only input", () => {
   assert.equal(doc.files[0]?.status, "modified")
 })
 
-test("parseDiff handles single line diff", () => {
-  // Without ---/+++ lines, the parser can't determine old/new paths, so status is 'modified'
+test("parseDiff handles metadata-only added files", () => {
   const raw = "diff --git a/x.txt b/x.txt\nnew file mode 100644"
   const doc = buildDocument("working", "test", "test", raw)
   assert.equal(doc.files.length, 1)
-  assert.equal(doc.files[0]?.status, "modified")
+  assert.equal(doc.files[0]?.status, "added")
   assert.equal(doc.files[0]?.path, "x.txt")
+})
+
+test("parseDiff preserves spaces in metadata-only paths", () => {
+  const path = "empty odd name.txt"
+  const raw = `diff --git a/${path} b/${path}\nnew file mode 100644\nindex 0000000..e69de29`
+  const doc = buildDocument("working", "test", "test", raw)
+
+  assert.equal(doc.files[0]?.path, path)
+  assert.equal(doc.files[0]?.status, "added")
 })
 
 test("parseDiff handles modified file (no special status)", () => {

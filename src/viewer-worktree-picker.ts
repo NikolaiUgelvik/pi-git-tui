@@ -21,6 +21,10 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     })
   }
 
+  protected override isOperationLoading(): boolean {
+    return this.worktreeState === "loading" || super.isOperationLoading()
+  }
+
   protected override featureHelpContext(): HelpContext | undefined {
     if (this.worktreeState !== "closed") {
       return "worktreePicker"
@@ -49,7 +53,9 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
 
   protected override handleFeatureOpenInput(data: string): boolean {
     if (data === "w") {
-      this.openWorktreePicker().catch((error: unknown) => this.showAsyncError(error))
+      if (!this.mutationActive()) {
+        this.openWorktreePicker().catch((error: unknown) => this.showAsyncError(error))
+      }
       return true
     }
     return super.handleFeatureOpenInput(data)
@@ -69,13 +75,13 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      const worktrees = await listWorktrees(this.pi, this.activePath(), this.ctx.signal)
+      const worktrees = await listWorktrees(this.pi, this.activePath(), this.viewerSignal)
       this.worktreeState = "open"
       this.worktreePickerController.open(worktrees, this.activePath())
     } catch (error) {
       this.worktreeState = "closed"
       this.worktreePickerController.state = "closed"
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
       this.loadingMessage = undefined
       this.worktreePickerController.loadingMessage = undefined
@@ -91,29 +97,54 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
   }
 
   protected async switchToWorktree(worktree: WorktreeSummary): Promise<void> {
-    const previousPath = this.activePath()
+    if (this.mutationActive()) return
+    let disposition: "applied" | "superseded" | undefined
     this.worktreeState = "loading"
     this.worktreePickerController.state = "loading"
     this.loadingMessage = `Loading ${worktree.path}…`
     this.worktreePickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      this.activeCwd = worktree.path
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
-      this.statusMessage = `Viewing ${worktree.path}`
-      this.worktreeState = "closed"
-      this.worktreePickerController.state = "closed"
+      disposition = await this.loadLatestDocument({
+        cwd: worktree.path,
+        target: `working:${worktree.path}`,
+        selection: "first",
+        load: async (signal) => {
+          const document = await loadWorkingTreeDiff(this.pi, this.contextFor(worktree.path, signal))
+          if (document.repositoryState === "missing") {
+            throw new Error(`Worktree is no longer available: ${worktree.path}`)
+          }
+          return document
+        },
+      })
+      if (disposition === "applied") {
+        this.error = undefined
+        this.statusMessage = `Viewing ${worktree.path}`
+        this.worktreeState = "closed"
+        this.worktreePickerController.state = "closed"
+      }
     } catch (error) {
-      this.activeCwd = previousPath
-      this.error = error instanceof Error ? error.message : String(error)
-      this.worktreeState = "open"
-      this.worktreePickerController.state = "open"
+      if (this.setAsyncError(error)) {
+        const operationError = this.error
+        try {
+          const worktrees = await listWorktrees(this.pi, this.activePath(), this.viewerSignal)
+          this.worktreeState = "open"
+          this.worktreePickerController.open(worktrees, this.activePath())
+          this.error = operationError
+        } catch (listError) {
+          const detail = listError instanceof Error ? listError.message : String(listError)
+          this.error = `${operationError}; worktree list refresh failed: ${detail}`
+          this.worktreePickerController.list.items = []
+          this.worktreeState = "closed"
+          this.worktreePickerController.close()
+        }
+      }
     } finally {
-      this.loadingMessage = undefined
-      this.worktreePickerController.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.loadingMessage = undefined
+        this.worktreePickerController.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 

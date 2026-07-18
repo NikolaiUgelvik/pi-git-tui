@@ -68,8 +68,17 @@ export class DiffViewer extends DiffViewerWorktreePicker {
   }
 
   handleInput(data: string): void {
+    if (this.isOperationLoading() && this.handleCloseInput(data)) {
+      return
+    }
+    if (this.handleHelpInput(data)) {
+      return
+    }
+    if (this.mutationActive() && this.handleViewerNavigationInput(data)) {
+      this.requestRender()
+      return
+    }
     if (
-      this.handleHelpInput(data) ||
       this.handleFeatureOverlayInput(data) ||
       this.handleActiveOverlayInput(data) ||
       this.handleCloseInput(data) ||
@@ -83,6 +92,6 @@ export class DiffViewer extends DiffViewerWorktreePicker {
   }
 
   invalidate(): void {
-    // The viewer renders from current git data only; there is no cached external state to invalidate.
+    this.invalidateRenderCache()
   }
 }

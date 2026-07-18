@@ -1,6 +1,6 @@
 import { CommandMenuController } from "./command-menu-controller.js"
-import { loadWorkingTreeDiff, runGitCommand } from "./git.js"
-import type { GitCommand } from "./types.js"
+import { refreshWorkingTreeDocument, runGitCommand } from "./git.js"
+import type { GitCommand, WorkingTreeRefreshScope } from "./types.js"
 import { DiffViewerCommitDialog } from "./viewer-commit-dialog.js"
 
 export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
@@ -34,43 +34,67 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
   }
 
   protected async runSelectedCommand(command: GitCommand): Promise<void> {
-    this.commandMenuState = "loading"
-    this.commandMenuController.state = "loading"
-    this.loadingMessage = `Running ${command.label}…`
-    this.commandMenuController.loadingMessage = this.loadingMessage
-    this.error = undefined
-    this.statusMessage = undefined
-    this.requestRender()
-    try {
-      const message = await runGitCommand(this.pi, this.activePath(), command, this.ctx.signal)
-      await this.refreshDocumentAfterCommand(command)
-      this.statusMessage = message
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      await this.refreshDocumentAfterFailedCommand(command)
-    } finally {
-      this.commandMenuState = "closed"
-      this.commandMenuController.state = "closed"
-      this.loadingMessage = undefined
-      this.commandMenuController.loadingMessage = undefined
+    await this.runMutation("command", async (signal) => {
+      const cwd = this.activePath()
+      let disposition: "applied" | "superseded" | undefined
+      this.commandMenuState = "loading"
+      this.commandMenuController.state = "loading"
+      this.loadingMessage = `Running ${command.label}…`
+      this.commandMenuController.loadingMessage = this.loadingMessage
+      this.error = undefined
+      this.statusMessage = undefined
       this.requestRender()
-    }
+      try {
+        const message = await runGitCommand(this.pi, cwd, command, signal)
+        disposition = await this.refreshDocumentAfterCommand(command.refresh.success, cwd, signal)
+        if (disposition === "applied") this.statusMessage = message
+      } catch (error) {
+        if (this.setAsyncError(error)) {
+          disposition = await this.refreshDocumentAfterFailedCommand(command.refresh.failure, cwd, signal)
+        }
+      } finally {
+        if (disposition !== "superseded") {
+          this.commandMenuState = "closed"
+          this.commandMenuController.state = "closed"
+          this.loadingMessage = undefined
+          this.commandMenuController.loadingMessage = undefined
+          this.requestRender()
+        }
+      }
+    })
   }
 
-  protected async refreshDocumentAfterCommand(command: GitCommand): Promise<void> {
-    if (!command.refreshDiff || this.document.mode !== "working") {
-      return
-    }
-    this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-    this.resetSelectionToFirstTreeFile()
+  protected async refreshDocumentAfterCommand(
+    scope: WorkingTreeRefreshScope,
+    cwd: string,
+    operationSignal: AbortSignal,
+  ): Promise<"applied" | "superseded"> {
+    const current = this.document
+    return this.loadLatestDocument({
+      cwd,
+      target: `working:${cwd}:${scope}`,
+      selection: "preserve-current-path",
+      load: async (signal) => {
+        const result = await refreshWorkingTreeDocument(this.pi, this.contextFor(cwd, signal), current, scope)
+        return result.document
+      },
+      operationSignal,
+    })
   }
 
-  protected async refreshDocumentAfterFailedCommand(command: GitCommand): Promise<void> {
+  protected async refreshDocumentAfterFailedCommand(
+    scope: WorkingTreeRefreshScope,
+    cwd: string,
+    operationSignal: AbortSignal,
+  ): Promise<"applied" | "superseded"> {
     try {
-      await this.refreshDocumentAfterCommand(command)
+      return await this.refreshDocumentAfterCommand(scope, cwd, operationSignal)
     } catch (refreshError) {
-      const message = refreshError instanceof Error ? refreshError.message : String(refreshError)
-      this.error = `${this.error}; refresh failed: ${message}`
+      const commandError = this.error
+      if (this.setAsyncError(refreshError)) {
+        this.error = `${commandError}; refresh failed: ${this.error}`
+      }
+      return "applied"
     }
   }
 

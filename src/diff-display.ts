@@ -230,7 +230,21 @@ function appendDisplayLine(state: FormatDiffState, line: string): void {
   }
 }
 
+function omissionRows(file: DiffFile): DiffDisplayRow[] | undefined {
+  if (!file.omission) {
+    return
+  }
+  return [
+    { type: "summary", text: `Diff omitted for ${JSON.stringify(file.path)}` },
+    { type: "summary", text: file.omission.message },
+  ]
+}
+
 export function formatDiffDisplay(file: DiffFile): DiffDisplayRow[] {
+  const omitted = omissionRows(file)
+  if (omitted) {
+    return omitted
+  }
   const state: FormatDiffState = {
     rows: [],
     metadata: {},

@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { KeyId } from "@earendil-works/pi-tui"
 import { emptyDocument } from "./diff-parser.js"
 import { loadWorkingTreeDiff } from "./git.js"
+import { isGitAbortError } from "./git-service.js"
 import type { DiffDocument } from "./types.js"
 import { DiffViewer } from "./viewer.js"
 
@@ -21,6 +22,9 @@ async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): Promise<
   try {
     initialDocument = await loadWorkingTreeDiff(pi, ctx)
   } catch (error) {
+    if (isGitAbortError(error)) {
+      return
+    }
     const message = error instanceof Error ? error.message : String(error)
     initialDocument = emptyDocument("Failed to load git diff", message, "working")
   }

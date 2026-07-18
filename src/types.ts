@@ -21,9 +21,25 @@ export interface WorktreeSummary {
 }
 
 export const COMMIT_LIMIT = 200
-export const GIT_TIMEOUT_MS = 10_000
-export const MAX_UNTRACKED_FILE_BYTES = 256 * 1024
-export const MAX_COMMIT_MESSAGE_DIFF_CHARS = 24_000
+
+export type DiffOmissionReason =
+  | "file-too-large"
+  | "file-count-budget"
+  | "aggregate-byte-budget"
+  | "aggregate-line-budget"
+  | "unsupported-file"
+  | "changed-during-load"
+  | "capture-overflow"
+
+export interface DiffOmission {
+  reason: DiffOmissionReason
+  measuredBytes?: number
+  limitBytes?: number
+  measuredLines?: number
+  limitLines?: number
+  limitFiles?: number
+  message: string
+}
 
 export type DiffMode = "working" | "commit"
 export type RepositoryState = "ready" | "missing"
@@ -35,11 +51,23 @@ export interface CommitSummary {
 
 export type CommitPickerItem = { type: "working" } | { type: "commit"; commit: CommitSummary }
 
+export type WorkingTreeRefreshScope = "none" | "status" | "full"
+
 export interface GitCommand {
-  label: string
-  description: string
-  args: string[]
-  refreshDiff: boolean
+  readonly label: string
+  readonly description: string
+  readonly args: readonly string[]
+  readonly refresh: {
+    readonly success: WorkingTreeRefreshScope
+    readonly failure: WorkingTreeRefreshScope
+  }
+}
+
+export interface WorkingTreeRevision {
+  readonly root: string
+  readonly statusFingerprint: string
+  readonly contentIdentity: string
+  readonly clean: boolean
 }
 
 export interface DiffFile {
@@ -49,7 +77,10 @@ export interface DiffFile {
   status: "added" | "deleted" | "modified" | "renamed" | "copied" | "binary" | "conflicted"
   staged: boolean
   untracked?: boolean
+  untrackedRole?: "replacement" | "rename-source"
+  submodule?: string
   lines: string[]
+  omission?: DiffOmission
 }
 
 export interface DiffDocument {
@@ -58,15 +89,12 @@ export interface DiffDocument {
   subtitle: string
   raw: string
   files: DiffFile[]
+  omittedFileCount: number
+  capturedPatchBytes: number
+  capturedPatchLines: number
   commit?: CommitSummary
   repositoryState?: RepositoryState
-}
-
-export interface GitExecResult {
-  stdout: string
-  stderr: string
-  code: number
-  killed: boolean
+  revision?: WorkingTreeRevision
 }
 
 export type FocusPanel = "tree" | "diff"
@@ -92,20 +120,35 @@ export const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor> = {
 }
 
 export const GIT_COMMANDS: GitCommand[] = [
-  { label: "Fetch", description: "Fetch updates from the default remote", args: ["fetch"], refreshDiff: true },
-  { label: "Pull", description: "Pull updates into the current branch", args: ["pull"], refreshDiff: true },
+  {
+    label: "Fetch",
+    description: "Fetch updates from the default remote",
+    args: ["fetch"],
+    refresh: { success: "status", failure: "status" },
+  },
+  {
+    label: "Pull",
+    description: "Pull updates into the current branch",
+    args: ["pull"],
+    refresh: { success: "full", failure: "full" },
+  },
   {
     label: "Pull (Rebase)",
     description: "Pull updates and rebase local commits",
     args: ["pull", "--rebase"],
-    refreshDiff: true,
+    refresh: { success: "full", failure: "full" },
   },
-  { label: "Push", description: "Push the current branch", args: ["push"], refreshDiff: true },
+  {
+    label: "Push",
+    description: "Push the current branch",
+    args: ["push"],
+    refresh: { success: "status", failure: "status" },
+  },
   {
     label: "Force Push",
     description: "Push the current branch with --force-with-lease",
     args: ["push", "--force-with-lease"],
-    refreshDiff: true,
+    refresh: { success: "status", failure: "status" },
   },
 ]
 

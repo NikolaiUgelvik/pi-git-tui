@@ -125,29 +125,85 @@ function isPageDown(data: string): boolean {
 
 // --- State class ---
 
+export interface FilterableListCacheStats {
+  readonly itemsVersion: number
+  readonly filteredSnapshotBuilds: number
+}
+
+interface FilteredSnapshot<T> {
+  readonly itemsVersion: number
+  readonly query: string
+  readonly items: readonly T[]
+}
+
+function immutableItems<T>(items: readonly T[]): readonly T[] {
+  return Object.freeze([...items])
+}
+
 /**
  * Generic state container for a filterable list overlay.
  * Manages search query, selection, scroll, and filtered items.
+ *
+ * The item array and searchable fields are treated as immutable until the
+ * items setter is used. A single versioned filtered snapshot is retained, so
+ * replacing items or changing the query has explicit, bounded invalidation.
  */
 export class FilterableListState<T> {
-  public searchQuery = ""
   public selectedIndex = 0
   public scroll = 0
 
+  private itemsSnapshot: readonly T[]
+  private itemsVersion = 0
+  private currentSearchQuery = ""
+  private filteredSnapshot: FilteredSnapshot<T> | undefined
+  private filteredSnapshotBuilds = 0
+
   constructor(
-    /** Full list of items (before filtering). */
-    public items: T[],
+    items: readonly T[],
     /** Function that produces a searchable string for each item. */
-    public searchText: (item: T) => string,
-  ) {}
+    private readonly searchText: (item: T) => string,
+  ) {
+    this.itemsSnapshot = immutableItems(items)
+  }
+
+  /** Full immutable list snapshot (before filtering). */
+  get items(): readonly T[] {
+    return this.itemsSnapshot
+  }
+
+  set items(items: readonly T[]) {
+    this.itemsSnapshot = immutableItems(items)
+    this.itemsVersion++
+    this.filteredSnapshot = undefined
+  }
+
+  get searchQuery(): string {
+    return this.currentSearchQuery
+  }
+
+  set searchQuery(query: string) {
+    if (query === this.currentSearchQuery) {
+      return
+    }
+    this.currentSearchQuery = query
+    this.filteredSnapshot = undefined
+  }
 
   /** Items filtered by the current search query. */
-  get filteredItems(): T[] {
-    const tokens = searchTokens(this.searchQuery)
-    if (tokens.length === 0) {
-      return this.items
+  get filteredItems(): readonly T[] {
+    const cached = this.filteredSnapshot
+    if (cached?.itemsVersion === this.itemsVersion && cached.query === this.searchQuery) {
+      return cached.items
     }
-    return this.items.filter((item) => matchesSearch(this.searchText(item), tokens))
+
+    const tokens = searchTokens(this.searchQuery)
+    const items =
+      tokens.length === 0
+        ? this.itemsSnapshot
+        : Object.freeze(this.itemsSnapshot.filter((item) => matchesSearch(this.searchText(item), tokens)))
+    this.filteredSnapshot = Object.freeze({ itemsVersion: this.itemsVersion, query: this.searchQuery, items })
+    this.filteredSnapshotBuilds++
+    return items
   }
 
   /** Total count of filtered items. */
@@ -160,6 +216,10 @@ export class FilterableListState<T> {
     return this.filteredItems[index]
   }
 
+  public cacheStats(): FilterableListCacheStats {
+    return { itemsVersion: this.itemsVersion, filteredSnapshotBuilds: this.filteredSnapshotBuilds }
+  }
+
   /** Reset selection and scroll to the beginning. */
   public reset(): void {
     this.selectedIndex = 0
@@ -168,7 +228,8 @@ export class FilterableListState<T> {
 
   /** Clamp the selection index to the valid range. */
   public clampSelection(): void {
-    this.selectedIndex = Math.max(0, Math.min(Math.max(0, this.filteredCount - 1), this.selectedIndex))
+    const itemCount = this.filteredItems.length
+    this.selectedIndex = Math.max(0, Math.min(Math.max(0, itemCount - 1), this.selectedIndex))
   }
 
   /** Append a printable character to the search query and reset scroll. */
@@ -185,7 +246,7 @@ export class FilterableListState<T> {
 
   /** Move selection with a navigation key. Returns true if handled. */
   public moveSelection(data: string): boolean {
-    const nextIndex = nextListSelectionIndex(data, this.selectedIndex, this.filteredCount)
+    const nextIndex = nextListSelectionIndex(data, this.selectedIndex, this.filteredItems.length)
     if (nextIndex === undefined) {
       return false
     }
@@ -193,18 +254,14 @@ export class FilterableListState<T> {
     return true
   }
 
-  /** Update scroll position for the current selection. */
-  public updateScroll(maxItems: number): void {
-    this.scroll = nextListScroll(this.selectedIndex, this.scroll, this.filteredCount, maxItems)
-  }
-
   /** Get visible items after applying scroll. */
   public visibleItems(maxItems: number): Array<{ item: T; index: number }> {
-    this.updateScroll(maxItems)
-    const end = Math.min(this.filteredCount, this.scroll + maxItems)
+    const filteredItems = this.filteredItems
+    this.scroll = nextListScroll(this.selectedIndex, this.scroll, filteredItems.length, maxItems)
+    const end = Math.min(filteredItems.length, this.scroll + maxItems)
     const result: Array<{ item: T; index: number }> = []
     for (let i = this.scroll; i < end; i++) {
-      const item = this.filteredItems[i]
+      const item = filteredItems[i]
       if (item !== undefined) {
         result.push({ item, index: i })
       }

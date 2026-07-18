@@ -1,0 +1,9 @@
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type WorkingTreeSnapshot } from "./git-status.js";
+import type { CommitSummary, DiffDocument, WorkingTreeRevision } from "./types.js";
+export declare function workingTreeDocumentTitle(snapshot: WorkingTreeSnapshot): string;
+export declare function workingTreeDocumentSubtitle(root: string, snapshot: WorkingTreeSnapshot): string;
+export declare function workingTreeRevision(root: string, snapshot: WorkingTreeSnapshot, contentIdentity: string): WorkingTreeRevision;
+export declare function loadWorkingTreeDiffFromSnapshot(pi: ExtensionAPI, root: string, snapshot: WorkingTreeSnapshot, signal?: AbortSignal): Promise<DiffDocument>;
+export declare function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionContext): Promise<DiffDocument>;
+export declare function loadCommitDiff(pi: ExtensionAPI, cwd: string, commit: CommitSummary, signal?: AbortSignal): Promise<DiffDocument>;

@@ -1,33 +1,57 @@
+import { decodeGitQuotedPath } from "./git-path-quote.js"
 import type { DiffFile } from "./types.js"
 
 function dropDiffSidePrefix(value: string): string {
   return value.startsWith("a/") || value.startsWith("b/") ? value.slice(2) : value
 }
 
-function parseQuotedGitPath(value: string): string {
-  if (!value.startsWith('"') || !value.endsWith('"')) {
-    return value
-  }
-  try {
-    return JSON.parse(value) as string
-  } catch {
-    return value.slice(1, -1)
-  }
-}
-
 function unquoteGitPath(path: string): string {
-  const value = dropDiffSidePrefix(path.trim())
-  return value === "/dev/null" ? value : parseQuotedGitPath(value)
+  const [encodedPath = path] = path.split("\t", 1)
+  const value = encodedPath.startsWith('"')
+    ? decodeGitQuotedPath(encodedPath)
+    : decodeGitQuotedPath(dropDiffSidePrefix(encodedPath))
+  return value === "/dev/null" ? value : dropDiffSidePrefix(value)
 }
 
 const DIFF_GIT_LINE = /^diff --git (.+) (.+)$/
 
-function pathFromDiffGit(line: string): string | undefined {
-  const match = line.match(DIFF_GIT_LINE)
-  if (!match) {
-    return
+function quotedTokenEnd(value: string): number | undefined {
+  if (!value.startsWith('"')) return
+  for (let index = 1; index < value.length; index++) {
+    if (value[index] === "\\") {
+      index++
+    } else if (value[index] === '"') {
+      return index
+    }
   }
-  return unquoteGitPath(match[2] ?? match[1] ?? "")
+}
+
+function quotedDestination(body: string): string | undefined {
+  const firstEnd = quotedTokenEnd(body)
+  if (firstEnd === undefined) return
+  const remainder = body.slice(firstEnd + 1).trimStart()
+  const secondEnd = quotedTokenEnd(remainder)
+  if (secondEnd === undefined || remainder.slice(secondEnd + 1).trim()) return
+  return unquoteGitPath(remainder.slice(0, secondEnd + 1))
+}
+
+function samePathDestination(body: string): string | undefined {
+  let separator = body.indexOf(" b/")
+  while (separator >= 0) {
+    const oldPath = unquoteGitPath(body.slice(0, separator))
+    const destination = body.slice(separator + 1)
+    if (oldPath === unquoteGitPath(destination)) return unquoteGitPath(destination)
+    separator = body.indexOf(" b/", separator + 1)
+  }
+}
+
+function pathFromDiffGit(line: string): string | undefined {
+  if (!line.startsWith("diff --git ")) return
+  const body = line.slice("diff --git ".length)
+  const precise = quotedDestination(body) ?? samePathDestination(body)
+  if (precise) return precise
+  const match = line.match(DIFF_GIT_LINE)
+  return match ? unquoteGitPath(match[2] ?? match[1] ?? "") : undefined
 }
 
 function lineHasAnyPrefix(line: string, prefixes: string[]): boolean {
@@ -38,6 +62,8 @@ const STATUS_LINE_RULES: Array<{ status: DiffFile["status"]; matches: (line: str
   { status: "binary", matches: (line) => lineHasAnyPrefix(line, ["Binary files ", "GIT binary patch"]) },
   { status: "renamed", matches: (line) => line.startsWith("rename from ") },
   { status: "copied", matches: (line) => line.startsWith("copy from ") },
+  { status: "added", matches: (line) => line.startsWith("new file mode ") },
+  { status: "deleted", matches: (line) => line.startsWith("deleted file mode ") },
 ]
 
 function statusFromPaths(oldPath?: string, newPath?: string): DiffFile["status"] {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
 import type { KeyId } from "@earendil-works/pi-tui"
 import gitDiffExtension, { getDiffShortcut } from "../extensions/diff.js"
 
@@ -56,4 +56,39 @@ test("registers the diff command and platform shortcut", () => {
   assert.equal(shortcuts[0]?.shortcut, getDiffShortcut())
   assert.match(shortcuts[0]?.options.description ?? "", /git diff/i)
   assert.equal(typeof shortcuts[0]?.options.handler, "function")
+})
+
+test("initial cancellation is silent and does not open the viewer", async () => {
+  let commandHandler: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"] | undefined
+  let execCalls = 0
+  let customCalls = 0
+  const pi = {
+    registerCommand: (_name: string, options: Parameters<ExtensionAPI["registerCommand"]>[1]) => {
+      commandHandler = options.handler
+    },
+    registerShortcut: () => {},
+    exec: async () => {
+      execCalls++
+      return { stdout: "", stderr: "", code: 0, killed: false }
+    },
+  } as unknown as ExtensionAPI
+  gitDiffExtension(pi)
+  const controller = new AbortController()
+  controller.abort()
+  const ctx = {
+    cwd: "/repo",
+    signal: controller.signal,
+    hasUI: true,
+    ui: {
+      custom: async () => {
+        customCalls++
+      },
+      notify: () => {},
+    },
+  } as unknown as ExtensionCommandContext
+
+  await commandHandler?.("", ctx)
+
+  assert.equal(execCalls, 0)
+  assert.equal(customCalls, 0)
 })

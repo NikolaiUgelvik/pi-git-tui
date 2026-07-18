@@ -1,20 +1,78 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { matchesKey } from "@earendil-works/pi-tui"
-import { loadWorkingTreeDiff, stageOrUnstageFile, toggleAllChangesStaged } from "./git.js"
+import { isGitAbortError } from "./git-service.js"
 import { fit } from "./render-text.js"
-import { buildTreeRows } from "./tree.js"
-import type { DiffDocument, FocusPanel, HelpContext } from "./types.js"
+import type { TreeRow } from "./tree.js"
+import type { DiffDocument, DiffFile, FocusPanel, HelpContext } from "./types.js"
 import {
-  arrowScrollDelta as inputArrowScrollDelta,
   isEnterInput,
   isHelpCloseInput as isHelpCloseKey,
   isHelpKey as isHelpOpenKey,
-  isPageDownInput,
-  isPageUpInput,
   isPrintableInput as isPrintableKey,
-  isShiftEnterInput,
   isViewerKey,
 } from "./viewer-key-input.js"
+import {
+  type DocumentLoadDisposition,
+  type MutationRun,
+  type ViewerMutationKind,
+  ViewerOperationCoordinator,
+} from "./viewer-operation-coordinator.js"
+import { type SelectedFileDisplay, ViewerRenderCache, type ViewerRenderCacheStats } from "./viewer-render-cache.js"
+
+export type SelectionPolicy = "preserve-current-path" | "first"
+
+interface FileSelectionSnapshot {
+  readonly file: DiffFile
+  readonly exactOccurrence: number
+  readonly pathOccurrence: number
+}
+
+function logicalChangeKey(file: DiffFile): string {
+  return JSON.stringify([
+    file.path,
+    file.oldPath,
+    file.newPath,
+    file.status,
+    file.staged,
+    file.untracked,
+    file.untrackedRole,
+    file.submodule,
+  ])
+}
+
+function sameLogicalChange(left: DiffFile, right: DiffFile): boolean {
+  return logicalChangeKey(left) === logicalChangeKey(right)
+}
+
+function occurrenceBefore(files: readonly DiffFile[], index: number, matches: (file: DiffFile) => boolean): number {
+  return files.slice(0, index).filter(matches).length
+}
+
+function fileSelectionSnapshot(files: readonly DiffFile[], index: number): FileSelectionSnapshot | undefined {
+  const file = files[index]
+  if (!file) return
+  return {
+    file,
+    exactOccurrence: occurrenceBefore(files, index, (candidate) => sameLogicalChange(candidate, file)),
+    pathOccurrence: occurrenceBefore(files, index, (candidate) => candidate.path === file.path),
+  }
+}
+
+function matchingIndex(
+  files: readonly DiffFile[],
+  occurrence: number,
+  matches: (file: DiffFile) => boolean,
+): number | undefined {
+  const indexes = files.flatMap((file, index) => (matches(file) ? [index] : []))
+  return indexes[occurrence] ?? indexes[0]
+}
+
+function preservedFileIndex(files: readonly DiffFile[], selection: FileSelectionSnapshot): number | undefined {
+  return (
+    matchingIndex(files, selection.exactOccurrence, (file) => sameLogicalChange(file, selection.file)) ??
+    matchingIndex(files, selection.pathOccurrence, (file) => file.path === selection.file.path)
+  )
+}
 
 export class DiffViewerCore {
   protected document: DiffDocument
@@ -23,7 +81,15 @@ export class DiffViewerCore {
   protected readonly theme: Theme
   protected readonly done: () => void
   protected readonly requestRender: () => void
+  protected readonly viewerSignal: AbortSignal
+  protected readonly operationCoordinator: ViewerOperationCoordinator
   protected activeCwd: string
+
+  private readonly renderCache: ViewerRenderCache
+  private readonly viewerAbortController = new AbortController()
+  private readonly contextSignal: AbortSignal | undefined
+  private readonly abortFromContext = () => this.viewerAbortController.abort()
+  private viewerClosed = false
 
   protected selectedFileIndex = 0
   protected diffScroll = 0
@@ -53,8 +119,21 @@ export class DiffViewerCore {
     this.theme = theme
     this.document = document
     this.done = done
-    this.requestRender = requestRender
+    this.requestRender = () => {
+      if (!this.viewerClosed && !this.viewerAbortController.signal.aborted) {
+        requestRender()
+      }
+    }
     this.activeCwd = ctx.cwd
+    this.contextSignal = ctx.signal
+    this.viewerSignal = this.viewerAbortController.signal
+    if (this.contextSignal?.aborted) {
+      this.viewerAbortController.abort()
+    } else {
+      this.contextSignal?.addEventListener("abort", this.abortFromContext, { once: true })
+    }
+    this.operationCoordinator = new ViewerOperationCoordinator({ signal: this.viewerSignal })
+    this.renderCache = new ViewerRenderCache(document.files)
     this.resetSelectionToFirstTreeFile()
   }
 
@@ -62,8 +141,12 @@ export class DiffViewerCore {
     return this.activeCwd
   }
 
-  protected activeContext(): ExtensionContext {
-    return { ...this.ctx, cwd: this.activePath() }
+  protected activeContext(signal: AbortSignal = this.viewerSignal): ExtensionContext {
+    return this.contextFor(this.activePath(), signal)
+  }
+
+  protected contextFor(cwd: string, signal: AbortSignal = this.viewerSignal): ExtensionContext {
+    return { ...this.ctx, cwd, signal }
   }
 
   protected handleHelpInput(data: string): boolean {
@@ -103,6 +186,19 @@ export class DiffViewerCore {
     return "viewer"
   }
 
+  protected isOperationLoading(): boolean {
+    return (
+      this.operationCoordinator.mutationActive ||
+      this.pickerState === "loading" ||
+      this.commandMenuState === "loading" ||
+      this.commitDialogState === "loading"
+    )
+  }
+
+  protected mutationActive(): boolean {
+    return this.operationCoordinator.mutationActive
+  }
+
   protected handleActiveOverlayInput(data: string): boolean {
     if (this.commitDialogState !== "closed") {
       this.handleCommitDialogInput(data)
@@ -123,7 +219,7 @@ export class DiffViewerCore {
     if (!this.isKey(data, "q") && !matchesKey(data, "escape")) {
       return false
     }
-    this.done()
+    this.closeViewer()
     return true
   }
 
@@ -140,7 +236,9 @@ export class DiffViewerCore {
     if (data !== "c") {
       return false
     }
-    this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    if (!this.mutationActive()) {
+      this.openCommitPicker().catch((error: unknown) => this.showAsyncError(error))
+    }
     return true
   }
 
@@ -148,7 +246,9 @@ export class DiffViewerCore {
     if (data !== "C") {
       return false
     }
-    this.openCommitDialog()
+    if (!this.mutationActive()) {
+      this.openCommitDialog()
+    }
     return true
   }
 
@@ -156,124 +256,10 @@ export class DiffViewerCore {
     if (!matchesKey(data, "ctrl+p")) {
       return false
     }
-    this.openCommandMenu()
-    return true
-  }
-
-  protected handleViewerNavigationInput(data: string): void {
-    const handlers = [
-      () => this.handleFocusToggle(data),
-      () => this.handleStageAllInput(data),
-      () => this.handleFileStageToggle(data),
-      () => this.handleFileStep(data),
-      () => this.handleArrowScroll(data),
-      () => this.handlePageScroll(data),
-      () => this.handleEdgeJump(data),
-    ]
-    for (const handler of handlers) {
-      if (handler()) {
-        return
-      }
-    }
-  }
-
-  protected handleFocusToggle(data: string): boolean {
-    if (!matchesKey(data, "tab")) {
-      return false
-    }
-    this.focusedPanel = this.focusedPanel === "tree" ? "diff" : "tree"
-    return true
-  }
-
-  protected handleStageAllInput(data: string): boolean {
-    if (!this.isShiftEnter(data)) {
-      return false
-    }
-    if (this.document.mode !== "working") {
-      this.error = "Staging is only available in the working tree"
-      this.statusMessage = undefined
-      return true
-    }
-    this.stageAllVisibleChanges().catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleFileStageToggle(data: string): boolean {
-    if (!this.isEnter(data) || this.focusedPanel !== "tree") {
-      return false
-    }
-    if (this.document.mode !== "working") {
-      this.error = "Staging is only available in the working tree"
-      this.statusMessage = undefined
-      return true
-    }
-    const file = this.document.files[this.selectedFileIndex]
-    if (!file) {
-      return true
-    }
-    this.toggleSelectedFileStage(file.path).catch((error: unknown) => this.showAsyncError(error))
-    return true
-  }
-
-  protected handleFileStep(data: string): boolean {
-    if (this.isKey(data, "n")) {
-      this.moveFile(1)
-      return true
-    }
-    if (this.isKey(data, "p")) {
-      this.moveFile(-1)
-      return true
-    }
-    return false
-  }
-
-  protected handleArrowScroll(data: string): boolean {
-    const delta = this.arrowScrollDelta(data)
-    if (delta === 0) {
-      return false
-    }
-    if (this.focusedPanel === "tree") {
-      this.moveFile(delta)
-    } else {
-      this.scrollDiff(delta)
+    if (!this.mutationActive()) {
+      this.openCommandMenu()
     }
     return true
-  }
-
-  protected arrowScrollDelta(data: string): number {
-    return inputArrowScrollDelta(data)
-  }
-
-  protected handlePageScroll(data: string): boolean {
-    if (this.isPageUp(data)) {
-      this.scrollDiff(-this.pageScrollSize())
-      return true
-    }
-    if (this.isPageDown(data) || matchesKey(data, "space")) {
-      this.scrollDiff(this.pageScrollSize())
-      return true
-    }
-    return false
-  }
-
-  protected handleEdgeJump(data: string): boolean {
-    if (matchesKey(data, "home")) {
-      this.jumpToEdge("first")
-      return true
-    }
-    if (matchesKey(data, "end")) {
-      this.jumpToEdge("last")
-      return true
-    }
-    return false
-  }
-
-  protected jumpToEdge(edge: "first" | "last"): void {
-    if (this.focusedPanel === "tree") {
-      this.selectTreeEdge(edge)
-      return
-    }
-    this.diffScroll = edge === "first" ? 0 : Number.MAX_SAFE_INTEGER
   }
 
   protected isKey(data: string, key: string): boolean {
@@ -284,24 +270,14 @@ export class DiffViewerCore {
     return isEnterInput(data)
   }
 
-  protected isShiftEnter(data: string): boolean {
-    return isShiftEnterInput(data)
-  }
-
-  protected isPageUp(data: string): boolean {
-    return isPageUpInput(data)
-  }
-
-  protected isPageDown(data: string): boolean {
-    return isPageDownInput(data)
-  }
-
   protected isPrintableInput(data: string): boolean {
     return isPrintableKey(data)
   }
 
   protected showAsyncError(error: unknown): void {
-    this.error = error instanceof Error ? error.message : String(error)
+    if (!this.setAsyncError(error)) {
+      return
+    }
     this.statusMessage = undefined
     this.pickerState = "closed"
     this.commandMenuState = "closed"
@@ -312,6 +288,25 @@ export class DiffViewerCore {
 
   protected renderOverlays(baseLines: string[], width: number): string[] {
     return baseLines.map((line) => fit(line, width))
+  }
+
+  protected setAsyncError(error: unknown): boolean {
+    if (isGitAbortError(error)) {
+      return false
+    }
+    this.error = error instanceof Error ? error.message : String(error)
+    return true
+  }
+
+  private closeViewer(): void {
+    if (this.viewerClosed) {
+      return
+    }
+    this.viewerClosed = true
+    this.contextSignal?.removeEventListener("abort", this.abortFromContext)
+    this.operationCoordinator.dispose()
+    this.viewerAbortController.abort()
+    this.done()
   }
 
   protected handleCommitDialogInput(_data: string): void {}
@@ -345,7 +340,7 @@ export class DiffViewerCore {
     if (fileOrder.length === 0) {
       return
     }
-    const currentOrderIndex = Math.max(0, fileOrder.indexOf(this.selectedFileIndex))
+    const currentOrderIndex = this.renderCache.treeFileOrderIndex(this.selectedFileIndex) ?? 0
     const nextOrderIndex = Math.max(0, Math.min(fileOrder.length - 1, currentOrderIndex + delta))
     this.selectedFileIndex = fileOrder[nextOrderIndex] ?? this.selectedFileIndex
     this.diffScroll = 0
@@ -360,10 +355,28 @@ export class DiffViewerCore {
     this.diffScroll = 0
   }
 
-  protected treeFileOrder(): number[] {
-    return buildTreeRows(this.document.files)
-      .map((row) => row.fileIndex)
-      .filter((index): index is number => index !== undefined)
+  protected treeFileOrder(): readonly number[] {
+    return this.renderCache.treeFileOrder()
+  }
+
+  protected treeRows(): readonly TreeRow[] {
+    return this.renderCache.treeRows()
+  }
+
+  protected treeRowIndex(fileIndex: number): number | undefined {
+    return this.renderCache.treeRowIndex(fileIndex)
+  }
+
+  protected selectedFileDisplay(): SelectedFileDisplay | undefined {
+    return this.renderCache.selectedFileDisplay(this.selectedFileIndex)
+  }
+
+  protected renderCacheStats(): ViewerRenderCacheStats {
+    return this.renderCache.stats()
+  }
+
+  protected invalidateRenderCache(): void {
+    this.renderCache.invalidate()
   }
 
   protected scrollDiff(delta: number): void {
@@ -376,8 +389,8 @@ export class DiffViewerCore {
   }
 
   protected selectFileByPath(path: string): boolean {
-    const fileIndex = this.document.files.findIndex((file) => file.path === path)
-    if (fileIndex < 0) {
+    const fileIndex = this.renderCache.fileIndexForPath(path)
+    if (fileIndex === undefined) {
       return false
     }
     this.selectedFileIndex = fileIndex
@@ -385,42 +398,43 @@ export class DiffViewerCore {
     return true
   }
 
-  protected async refreshWorkingTreePreservingFile(path: string): Promise<void> {
-    this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-    if (!this.selectFileByPath(path)) {
-      this.resetSelectionToFirstTreeFile()
-    }
+  protected runMutation<T>(
+    kind: ViewerMutationKind,
+    task: (signal: AbortSignal) => Promise<T>,
+  ): Promise<MutationRun<T>> {
+    return this.operationCoordinator.runMutation(kind, task)
   }
 
-  protected async toggleSelectedFileStage(path: string): Promise<void> {
-    this.error = undefined
-    this.statusMessage = `Updating ${path}…`
-    this.requestRender()
-    try {
-      const message = await stageOrUnstageFile(this.pi, this.activePath(), path, this.ctx.signal)
-      await this.refreshWorkingTreePreservingFile(path)
-      this.statusMessage = message
-    } catch (error) {
-      this.statusMessage = undefined
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.requestRender()
-    }
+  protected loadLatestDocument(request: {
+    cwd: string
+    target: string
+    selection: SelectionPolicy
+    load: (signal: AbortSignal) => Promise<DiffDocument>
+    operationSignal?: AbortSignal
+  }): Promise<DocumentLoadDisposition> {
+    return this.operationCoordinator.applyLatest(
+      request.target,
+      request.load,
+      (document) => {
+        this.applyDocument(document, request.cwd, request.selection)
+      },
+      request.operationSignal,
+    )
   }
 
-  protected async stageAllVisibleChanges(): Promise<void> {
-    this.error = undefined
-    this.statusMessage = "Staging all changes…"
-    this.requestRender()
-    try {
-      this.statusMessage = await toggleAllChangesStaged(this.pi, this.activePath(), this.ctx.signal)
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-    } catch (error) {
-      this.statusMessage = undefined
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.requestRender()
+  protected applyDocument(document: DiffDocument, cwd: string, selection: SelectionPolicy): void {
+    const selected = fileSelectionSnapshot(this.document.files, this.selectedFileIndex)
+    const preservesContent = selection === "preserve-current-path" && document.files === this.document.files
+    this.document = document
+    this.renderCache.replaceDocument(document.files)
+    this.activeCwd = cwd
+    if (preservesContent) return
+    const preservedIndex = selected ? preservedFileIndex(document.files, selected) : undefined
+    if (selection === "preserve-current-path" && preservedIndex !== undefined) {
+      this.selectedFileIndex = preservedIndex
+      this.diffScroll = 0
+      return
     }
+    this.resetSelectionToFirstTreeFile()
   }
 }

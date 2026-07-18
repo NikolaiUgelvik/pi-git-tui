@@ -30,6 +30,10 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
     })
   }
 
+  protected override isOperationLoading(): boolean {
+    return this.stashState === "loading" || super.isOperationLoading()
+  }
+
   protected override featureHelpContext(): HelpContext | undefined {
     if (this.stashState !== "closed") {
       return "stashPicker"
@@ -58,7 +62,9 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
 
   protected override handleFeatureOpenInput(data: string): boolean {
     if (data === "s") {
-      this.openStashPicker().catch((error: unknown) => this.showAsyncError(error))
+      if (!this.mutationActive()) {
+        this.openStashPicker().catch((error: unknown) => this.showAsyncError(error))
+      }
       return true
     }
     return super.handleFeatureOpenInput(data)
@@ -78,11 +84,11 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
     this.stashPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      const stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
+      const stashes = await listStashes(this.pi, this.activePath(), this.viewerSignal)
       this.stashState = "open"
       this.stashPickerController.open(stashes)
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
       this.stashState = "closed"
       this.stashPickerController.state = "closed"
     } finally {
@@ -100,90 +106,118 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
   }
 
   protected async runStashCurrent(): Promise<void> {
-    const succeeded = await this.runStashOperation("Stashing current changes…", () =>
-      stashCurrentChanges(this.pi, this.activePath(), this.ctx.signal),
+    await this.runStashOperation(
+      "Stashing current changes…",
+      (cwd, signal) => stashCurrentChanges(this.pi, cwd, signal),
+      async (cwd, signal) => {
+        const stashes = await listStashes(this.pi, cwd, signal)
+        this.stashState = "open"
+        this.stashPickerController.state = "open"
+        this.stashPickerController.refreshStashes(stashes)
+      },
     )
-    if (succeeded) {
-      const stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
-      this.stashState = "open"
-      this.stashPickerController.state = "open"
-      this.stashPickerController.refreshStashes(stashes)
-    }
   }
 
   protected async runStashApply(ref: string): Promise<void> {
-    if (
-      await this.runStashOperation(`Applying ${ref}…`, () =>
-        applyStash(this.pi, this.activePath(), ref, this.ctx.signal),
-      )
-    ) {
-      this.stashState = "closed"
-      this.stashPickerController.state = "closed"
-    }
+    await this.runStashOperation(
+      `Applying ${ref}…`,
+      (cwd, signal) => applyStash(this.pi, cwd, ref, signal),
+      async () => {
+        this.stashState = "closed"
+        this.stashPickerController.state = "closed"
+      },
+    )
   }
 
   protected async runStashPop(ref: string): Promise<void> {
-    const succeeded = await this.runStashOperation(`Popping ${ref}…`, () =>
-      popStash(this.pi, this.activePath(), ref, this.ctx.signal),
+    await this.runStashOperation(
+      `Popping ${ref}…`,
+      (cwd, signal) => popStash(this.pi, cwd, ref, signal),
+      async (cwd, signal) => {
+        const stashes = await listStashes(this.pi, cwd, signal)
+        this.stashState = "closed"
+        this.stashPickerController.state = "closed"
+        this.stashPickerController.refreshStashes(stashes)
+      },
     )
-    if (succeeded) {
-      this.stashState = "closed"
-      this.stashPickerController.state = "closed"
-      const stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
-      this.stashPickerController.refreshStashes(stashes)
-    }
   }
 
   protected async runStashDrop(ref: string): Promise<void> {
-    const succeeded = await this.runStashOperation(`Dropping ${ref}…`, () =>
-      dropStash(this.pi, this.activePath(), ref, this.ctx.signal),
+    await this.runStashOperation(
+      `Dropping ${ref}…`,
+      (cwd, signal) => dropStash(this.pi, cwd, ref, signal),
+      async (cwd, signal) => {
+        const stashes = await listStashes(this.pi, cwd, signal)
+        this.stashState = "open"
+        this.stashPickerController.state = "open"
+        this.stashPickerController.stashConfirmAction = undefined
+        this.stashPickerController.stashConfirmRef = ""
+        this.stashPickerController.refreshStashes(stashes)
+      },
     )
-    if (succeeded) {
-      this.stashState = "open"
-      this.stashPickerController.state = "open"
-      this.stashPickerController.stashConfirmAction = undefined
-      this.stashPickerController.stashConfirmRef = ""
-      const stashes = await listStashes(this.pi, this.activePath(), this.ctx.signal)
-      this.stashPickerController.refreshStashes(stashes)
-    }
   }
 
-  protected async runStashOperation(label: string, operation: () => Promise<string>): Promise<boolean> {
-    this.stashState = "loading"
-    this.stashPickerController.state = "loading"
-    this.loadingMessage = label
-    this.stashPickerController.loadingMessage = this.loadingMessage
-    this.error = undefined
-    this.statusMessage = undefined
-    this.requestRender()
-    try {
-      this.statusMessage = await operation()
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      return true
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      await this.refreshWorkingTreeAfterStashFailure()
-      this.stashState = "open"
-      this.stashPickerController.state = "open"
-      return false
-    } finally {
-      this.loadingMessage = undefined
-      this.stashPickerController.loadingMessage = undefined
+  protected async runStashOperation(
+    label: string,
+    operation: (cwd: string, signal: AbortSignal) => Promise<string>,
+    afterSuccess: (cwd: string, signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
+    await this.runMutation("stash", async (signal) => {
+      const cwd = this.activePath()
+      let disposition: "applied" | "superseded" | undefined
+      let documentApplied = false
+      this.stashState = "loading"
+      this.stashPickerController.state = "loading"
+      this.loadingMessage = label
+      this.stashPickerController.loadingMessage = this.loadingMessage
+      this.error = undefined
+      this.statusMessage = undefined
       this.requestRender()
-    }
+      try {
+        const message = await operation(cwd, signal)
+        disposition = await this.loadLatestDocument({
+          cwd,
+          target: `working:${cwd}`,
+          selection: "preserve-current-path",
+          load: (loadSignal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, loadSignal)),
+          operationSignal: signal,
+        })
+        if (disposition === "applied") {
+          documentApplied = true
+          this.statusMessage = message
+          await afterSuccess(cwd, signal)
+        }
+      } catch (error) {
+        if (this.setAsyncError(error)) {
+          if (!documentApplied) await this.refreshWorkingTreeAfterStashFailure(cwd, signal)
+          this.stashState = "open"
+          this.stashPickerController.state = "open"
+        }
+      } finally {
+        if (disposition !== "superseded") {
+          this.loadingMessage = undefined
+          this.stashPickerController.loadingMessage = undefined
+          this.requestRender()
+        }
+      }
+    })
   }
 
-  protected async refreshWorkingTreeAfterStashFailure(): Promise<void> {
-    if (this.document.mode !== "working") {
-      return
-    }
+  protected async refreshWorkingTreeAfterStashFailure(cwd: string, operationSignal: AbortSignal): Promise<void> {
+    if (this.document.mode !== "working") return
     try {
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
+      await this.loadLatestDocument({
+        cwd,
+        target: `working:${cwd}`,
+        selection: "preserve-current-path",
+        load: (signal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, signal)),
+        operationSignal,
+      })
     } catch (refreshError) {
-      const message = refreshError instanceof Error ? refreshError.message : String(refreshError)
-      this.error = `${this.error}; refresh failed: ${message}`
+      const stashError = this.error
+      if (this.setAsyncError(refreshError)) {
+        this.error = `${stashError}; refresh failed: ${this.error}`
+      }
     }
   }
 

@@ -1,12 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, git, requireGitRepository } from "./git-service.js"
+import { hasHeadCommit, requireGitRepository, runGit } from "./git-service.js"
 import type { BranchSummary } from "./types.js"
 
 export async function getBranches(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<BranchSummary[]> {
   const root = await requireGitRepository(pi, cwd, signal)
   const format = "%(refname:short)%00%(HEAD)%00%(upstream:short)%00%(upstream:track,nobracket)"
-  const result = await git(pi, root, ["branch", "--format", format], signal)
-  assertGitSuccess(result, ["branch", "--format", format])
+  const result = await runGit(pi, root, ["branch", "--format", format], { signal })
   return result.stdout
     .split("\n")
     .filter(Boolean)
@@ -23,8 +22,7 @@ export async function switchBranch(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["switch", branch]
-  assertGitSuccess(await git(pi, root, args, signal), args)
+  await runGit(pi, root, ["switch", branch], { signal, timeoutClass: "mutation" })
   return `Switched to ${branch}`
 }
 
@@ -35,20 +33,19 @@ export async function createAndSwitchBranch(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["switch", "-c", name]
-  assertGitSuccess(await git(pi, root, args, signal), args)
+  await runGit(pi, root, ["switch", "-c", name], { signal, timeoutClass: "mutation" })
   return `Created and switched to ${name}`
 }
 
 export async function getBranchName(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string | undefined> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const branchResult = await git(pi, root, ["branch", "--show-current"], signal)
-  if (branchResult.code === 0 && branchResult.stdout.trim()) {
+  const branchResult = await runGit(pi, root, ["branch", "--show-current"], { signal })
+  if (branchResult.stdout.trim()) {
     return branchResult.stdout.trim()
   }
-  const headResult = await git(pi, root, ["rev-parse", "--short", "HEAD"], signal)
-  if (headResult.code === 0 && headResult.stdout.trim()) {
-    return `detached ${headResult.stdout.trim()}`
-  }
-  return undefined
+  if (!(await hasHeadCommit(pi, root, signal))) return
+  const headResult = await runGit(pi, root, ["rev-parse", "--short", "HEAD"], { signal })
+  const head = headResult.stdout.trim()
+  if (!head) throw new Error("Git returned an empty HEAD abbreviation")
+  return `detached ${head}`
 }

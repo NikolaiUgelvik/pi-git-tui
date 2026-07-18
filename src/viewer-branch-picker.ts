@@ -28,6 +28,10 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
     })
   }
 
+  protected override isOperationLoading(): boolean {
+    return this.branchState === "loading" || super.isOperationLoading()
+  }
+
   protected override featureHelpContext(): HelpContext | undefined {
     if (this.branchState !== "closed") {
       return "branchPicker"
@@ -56,7 +60,9 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
 
   protected override handleFeatureOpenInput(data: string): boolean {
     if (data === "b") {
-      this.openBranchPicker().catch((error: unknown) => this.showAsyncError(error))
+      if (!this.mutationActive()) {
+        this.openBranchPicker().catch((error: unknown) => this.showAsyncError(error))
+      }
       return true
     }
     return super.handleFeatureOpenInput(data)
@@ -76,13 +82,13 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
     this.branchPickerController.loadingMessage = this.loadingMessage
     this.requestRender()
     try {
-      const branches = await listBranches(this.pi, this.activePath(), this.ctx.signal)
+      const branches = await listBranches(this.pi, this.activePath(), this.viewerSignal)
       this.branchState = "open"
       this.branchPickerController.open(branches)
     } catch (error) {
       this.branchState = "closed"
       this.branchPickerController.state = "closed"
-      this.error = error instanceof Error ? error.message : String(error)
+      this.setAsyncError(error)
     } finally {
       this.loadingMessage = undefined
       this.branchPickerController.loadingMessage = undefined
@@ -98,42 +104,78 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
   }
 
   protected async runBranchSwitch(name: string): Promise<void> {
-    await this.runBranchOperation(`Switching to ${name}…`, "open", () =>
-      switchBranch(this.pi, this.activePath(), name, this.ctx.signal),
+    await this.runBranchOperation("branch-switch", `Switching to ${name}…`, (cwd, signal) =>
+      switchBranch(this.pi, cwd, name, signal),
     )
   }
 
   protected async runBranchCreate(name: string): Promise<void> {
-    await this.runBranchOperation(`Creating ${name}…`, "create", () =>
-      createAndSwitchBranch(this.pi, this.activePath(), name, this.ctx.signal),
+    await this.runBranchOperation("branch-create", `Creating ${name}…`, (cwd, signal) =>
+      createAndSwitchBranch(this.pi, cwd, name, signal),
     )
   }
 
   private async runBranchOperation(
+    kind: "branch-switch" | "branch-create",
     label: string,
-    failureState: "open" | "create",
-    operation: () => Promise<string>,
+    operation: (cwd: string, signal: AbortSignal) => Promise<string>,
   ): Promise<void> {
+    await this.runMutation(kind, (signal) => this.executeBranchOperation(label, operation, signal))
+  }
+
+  private async reconcileBranchFailure(cwd: string, signal: AbortSignal): Promise<void> {
+    const operationError = this.error
+    try {
+      const branches = await listBranches(this.pi, cwd, signal)
+      this.branchState = "open"
+      this.branchPickerController.open(branches)
+      this.error = operationError
+    } catch (listError) {
+      const detail = listError instanceof Error ? listError.message : String(listError)
+      this.error = `${operationError}; branch list refresh failed: ${detail}`
+      this.branchState = "closed"
+      this.branchPickerController.close()
+    }
+  }
+
+  private async executeBranchOperation(
+    label: string,
+    operation: (cwd: string, signal: AbortSignal) => Promise<string>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const cwd = this.activePath()
+    let disposition: "applied" | "superseded" | undefined
     this.branchState = "loading"
     this.branchPickerController.state = "loading"
     this.loadingMessage = label
     this.branchPickerController.loadingMessage = label
     this.requestRender()
     try {
-      this.statusMessage = await operation()
-      this.document = await loadWorkingTreeDiff(this.pi, this.activeContext())
-      this.resetSelectionToFirstTreeFile()
-      this.error = undefined
-      this.branchState = "closed"
-      this.branchPickerController.state = "closed"
+      const message = await operation(cwd, signal)
+      disposition = await this.loadLatestDocument({
+        cwd,
+        target: `working:${cwd}`,
+        selection: "first",
+        load: (loadSignal) => loadWorkingTreeDiff(this.pi, this.contextFor(cwd, loadSignal)),
+        operationSignal: signal,
+      })
+      if (disposition === "applied") {
+        this.statusMessage = message
+        this.error = undefined
+        this.branchState = "closed"
+        this.branchPickerController.state = "closed"
+      }
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error)
-      this.branchState = failureState
-      this.branchPickerController.state = failureState
+      if (this.setAsyncError(error)) {
+        disposition = await this.refreshWorkingTreeAfterMutationFailure(cwd, signal, "first")
+        if (disposition === "applied") await this.reconcileBranchFailure(cwd, signal)
+      }
     } finally {
-      this.loadingMessage = undefined
-      this.branchPickerController.loadingMessage = undefined
-      this.requestRender()
+      if (disposition !== "superseded") {
+        this.loadingMessage = undefined
+        this.branchPickerController.loadingMessage = undefined
+        this.requestRender()
+      }
     }
   }
 

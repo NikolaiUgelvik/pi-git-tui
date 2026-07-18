@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { ensureGitRepository, git } from "./git-service.js"
+import { ensureGitRepository, hasHeadCommit, runGit } from "./git-service.js"
 import type { CommitSummary } from "./types.js"
 import { COMMIT_LIMIT } from "./types.js"
 
@@ -8,8 +8,11 @@ export async function getCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSi
   if (!root) {
     return []
   }
-  const result = await git(pi, root, ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"], signal)
-  if (result.code !== 0 || !result.stdout.trim()) {
+  if (!(await hasHeadCommit(pi, root, signal))) return []
+  const result = await runGit(pi, root, ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"], {
+    signal,
+  })
+  if (!result.stdout.trim()) {
     return []
   }
   return result.stdout.split("\n").map((line) => {
@@ -31,10 +34,8 @@ export async function getCommitMessage(
   if (!root) {
     return ""
   }
-  const result = await git(pi, root, ["log", "-1", "--format=%s", hash], signal)
-  if (result.code !== 0) {
-    return ""
-  }
+  if (!(await hasHeadCommit(pi, root, signal))) return ""
+  const result = await runGit(pi, root, ["log", "-1", "--format=%s", hash], { signal })
   return result.stdout.trim()
 }
 
@@ -43,9 +44,9 @@ export async function getCommitCount(pi: ExtensionAPI, cwd: string, signal?: Abo
   if (!root) {
     return 0
   }
-  const result = await git(pi, root, ["rev-list", "--count", "HEAD"], signal)
-  if (result.code !== 0) {
-    return 0
-  }
-  return parseInt(result.stdout.trim(), 10) || 0
+  if (!(await hasHeadCommit(pi, root, signal))) return 0
+  const result = await runGit(pi, root, ["rev-list", "--count", "HEAD"], { signal })
+  const count = Number(result.stdout.trim())
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error("Git returned an invalid commit count")
+  return count
 }

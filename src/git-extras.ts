@@ -1,6 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, compactGitOutput, ensureGitRepository, git, requireGitRepository } from "./git-service.js"
-import type { DiffFile, GitExecResult } from "./types.js"
+import { withLiteralPaths } from "./git-literal-path.js"
+import {
+  compactGitOutput,
+  ensureGitRepository,
+  type GitCompletedResult,
+  GitExitError,
+  probeGit,
+  requireGitRepository,
+  runGit,
+} from "./git-service.js"
+import { loadWorkingTreeSnapshot } from "./git-status.js"
+import { hasNestedSubmoduleChanges, isSubmoduleState } from "./git-submodule-state.js"
+import type { DiffFile } from "./types.js"
 
 // Re-export from focused service modules
 export { createAndSwitchBranch, getBranches as listBranches, switchBranch } from "./git-branch-service.js"
@@ -12,26 +23,45 @@ export {
   stashCurrentChanges,
 } from "./git-stash-service.js"
 export { listWorktrees, parseWorktreeList } from "./git-worktree-service.js"
-// Re-export types
 export type { WorktreeSummary } from "./types.js"
 
-// --- Repository initialization ---
+interface FailedAttempt {
+  result: GitCompletedResult
+  args: readonly string[]
+}
+
+function throwDiscardFailure(attempts: FailedAttempt[]): never {
+  const selected = attempts.find(({ result }) => compactGitOutput(result)) ?? attempts[0]
+  if (!selected) {
+    throw new Error("Could not discard changes")
+  }
+  throw new GitExitError(
+    selected.result,
+    selected.args,
+    compactGitOutput(selected.result) || "Could not discard changes",
+  )
+}
 
 export async function initializeGitRepository(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
   const existing = await ensureGitRepository(pi, cwd, signal)
   if (existing) {
     return `Already a git repository: ${existing}`
   }
-  const args = ["init"]
-  assertGitSuccess(await git(pi, cwd, args, signal), args)
+  await runGit(pi, cwd, ["init"], { signal, timeoutClass: "mutation" })
   const root = (await ensureGitRepository(pi, cwd, signal)) ?? cwd
   return `Initialized git repository in ${root}`
 }
 
-// --- Discard operations ---
-
 async function hasHead(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<boolean> {
-  return (await git(pi, cwd, ["rev-parse", "--verify", "HEAD"], signal)).code === 0
+  return (await loadWorkingTreeSnapshot(pi, cwd, signal)).head.kind !== "initial"
+}
+
+function assertSubmoduleDiscardIsSafe(file: DiffFile): void {
+  if (!isSubmoduleState(file.submodule)) return
+  const detail = hasNestedSubmoduleChanges(file.submodule)
+    ? "manage nested changes inside the submodule"
+    : "update the submodule checkout explicitly"
+  throw new Error(`Cannot discard ${file.path}: ${detail}`)
 }
 
 async function selectedFileIsUntracked(
@@ -40,8 +70,15 @@ async function selectedFileIsUntracked(
   path: string,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const result = await git(pi, root, ["ls-files", "--others", "--exclude-standard", "-z", "--", path], signal)
-  return result.code === 0 && result.stdout.split("\0").filter(Boolean).includes(path)
+  const result = await runGit(
+    pi,
+    root,
+    withLiteralPaths(["ls-files", "--others", "--exclude-standard", "-z"], [path]),
+    {
+      signal,
+    },
+  )
+  return result.stdout.split("\0").filter(Boolean).includes(path)
 }
 
 function discardPaths(file: DiffFile): string[] {
@@ -50,19 +87,8 @@ function discardPaths(file: DiffFile): string[] {
 }
 
 async function cleanUntrackedPath(pi: ExtensionAPI, root: string, path: string, signal?: AbortSignal): Promise<string> {
-  const args = ["clean", "-f", "--", path]
-  assertGitSuccess(await git(pi, root, args, signal), args)
+  await runGit(pi, root, withLiteralPaths(["clean", "-f"], [path]), { signal, timeoutClass: "mutation" })
   return `Removed untracked ${path}`
-}
-
-function discardFailureMessage(primary: GitExecResult, fallback: GitExecResult): string {
-  return compactGitOutput(primary) || compactGitOutput(fallback) || "Could not discard changes"
-}
-
-function throwOnDiscardFailure(primary: GitExecResult, fallback: GitExecResult): void {
-  if (primary.code !== 0) {
-    throw new Error(discardFailureMessage(primary, fallback))
-  }
 }
 
 async function removeNoHeadPaths(
@@ -70,10 +96,13 @@ async function removeNoHeadPaths(
   root: string,
   paths: string[],
   signal: AbortSignal | undefined,
-  restoreResult: GitExecResult,
+  restoreAttempt: FailedAttempt,
 ): Promise<void> {
-  const rmArgs = ["rm", "-f", "--", ...paths]
-  throwOnDiscardFailure(await git(pi, root, rmArgs, signal), restoreResult)
+  const rmArgs = withLiteralPaths(["rm", "-f"], paths)
+  const rmResult = await probeGit(pi, root, rmArgs, { signal, timeoutClass: "mutation" })
+  if (rmResult.code !== 0) {
+    throwDiscardFailure([{ result: rmResult, args: rmArgs }, restoreAttempt])
+  }
 }
 
 async function discardWithHeadFallback(
@@ -81,21 +110,27 @@ async function discardWithHeadFallback(
   root: string,
   paths: string[],
   signal: AbortSignal | undefined,
-  restoreResult: GitExecResult,
+  restoreAttempt: FailedAttempt,
 ): Promise<void> {
-  const resetArgs = ["reset", "--", ...paths]
-  throwOnDiscardFailure(await git(pi, root, resetArgs, signal), restoreResult)
-  const worktreeArgs = ["restore", "--worktree", "--", ...paths]
-  const worktreeResult = await git(pi, root, worktreeArgs, signal)
+  const resetArgs = withLiteralPaths(["reset"], paths)
+  const resetResult = await probeGit(pi, root, resetArgs, { signal, timeoutClass: "mutation" })
+  if (resetResult.code !== 0) {
+    throwDiscardFailure([{ result: resetResult, args: resetArgs }, restoreAttempt])
+  }
+  const worktreeArgs = withLiteralPaths(["restore", "--worktree"], paths)
+  const worktreeResult = await probeGit(pi, root, worktreeArgs, { signal, timeoutClass: "mutation" })
   if (worktreeResult.code === 0) {
     return
   }
-  const cleanArgs = ["clean", "-f", "--", ...paths]
-  const cleanResult = await git(pi, root, cleanArgs, signal)
+  const cleanArgs = withLiteralPaths(["clean", "-f"], paths)
+  const cleanResult = await probeGit(pi, root, cleanArgs, { signal, timeoutClass: "mutation" })
   if (cleanResult.code === 0) {
     return
   }
-  throw new Error(discardFailureMessage(cleanResult, worktreeResult))
+  throwDiscardFailure([
+    { result: cleanResult, args: cleanArgs },
+    { result: worktreeResult, args: worktreeArgs },
+  ])
 }
 
 export async function discardFileChanges(
@@ -104,8 +139,13 @@ export async function discardFileChanges(
   file: DiffFile,
   signal?: AbortSignal,
 ): Promise<string> {
+  if (file.omission) {
+    throw new Error(`Cannot discard ${file.path} because its diff was omitted`)
+  }
+  assertSubmoduleDiscardIsSafe(file)
   const root = await requireGitRepository(pi, cwd, signal)
-  if (file.untracked || (await selectedFileIsUntracked(pi, root, file.path, signal))) {
+  const currentlyUntracked = file.untracked || (await selectedFileIsUntracked(pi, root, file.path, signal))
+  if (currentlyUntracked && file.untrackedRole !== "replacement" && !file.staged) {
     return cleanUntrackedPath(pi, root, file.path, signal)
   }
 
@@ -113,13 +153,14 @@ export async function discardFileChanges(
   if (paths.length === 0) {
     throw new Error("No selected file path to discard")
   }
-  const restoreArgs = ["restore", "--staged", "--worktree", "--", ...paths]
-  const restoreResult = await git(pi, root, restoreArgs, signal)
+  const restoreArgs = withLiteralPaths(["restore", "--staged", "--worktree"], paths)
+  const restoreResult = await probeGit(pi, root, restoreArgs, { signal, timeoutClass: "mutation" })
   if (restoreResult.code !== 0) {
+    const restoreAttempt = { result: restoreResult, args: restoreArgs }
     if (await hasHead(pi, root, signal)) {
-      await discardWithHeadFallback(pi, root, paths, signal, restoreResult)
+      await discardWithHeadFallback(pi, root, paths, signal, restoreAttempt)
     } else {
-      await removeNoHeadPaths(pi, root, paths, signal, restoreResult)
+      await removeNoHeadPaths(pi, root, paths, signal, restoreAttempt)
     }
   }
   return `Discarded changes in ${file.path}`

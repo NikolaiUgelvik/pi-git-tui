@@ -1,10 +1,9 @@
-import { type DiffDisplayRow, formatDiffDisplay } from "./diff-display.js"
+import type { DiffDisplayRow } from "./diff-display.js"
 import { diffLineStyleForText } from "./diff-line-style.js"
 import { fit } from "./render-text.js"
 import { renderScrollbar } from "./scrollbar.js"
-import { buildTreeRows } from "./tree.js"
 import { type DiffFile, type FocusPanel, type ThemeColor, TREE_STATUS_COLORS } from "./types.js"
-import { DiffViewerCore } from "./viewer-core.js"
+import { DiffViewerNavigation } from "./viewer-navigation.js"
 
 function diffDisplayRowColor(row: DiffDisplayRow): ThemeColor {
   switch (row.type) {
@@ -22,7 +21,7 @@ function diffDisplayRowColor(row: DiffDisplayRow): ThemeColor {
   }
 }
 
-export class DiffViewerFrame extends DiffViewerCore {
+export class DiffViewerFrame extends DiffViewerNavigation {
   render(width: number): string[] {
     // Pre-render: clamp scroll positions before rendering
     this.clampDiffScroll()
@@ -62,7 +61,9 @@ export class DiffViewerFrame extends DiffViewerCore {
   protected renderHeader(width: number): string {
     const fileCount = this.document.files.length
     const count = fileCount === 1 ? "1 file" : `${fileCount} files`
-    const title = `${this.theme.bold(this.document.title)} ${this.theme.fg("muted", `(${count})`)}`
+    const omitted = this.document.omittedFileCount
+    const summary = omitted > 0 ? `${count} • ${omitted} omitted` : count
+    const title = `${this.theme.bold(this.document.title)} ${this.theme.fg("muted", `(${summary})`)}`
     return fit(title, width)
   }
 
@@ -79,11 +80,12 @@ export class DiffViewerFrame extends DiffViewerCore {
   }
 
   protected renderFooter(width: number): string {
+    const omissionNotice = this.document.omittedFileCount > 0 ? `${this.document.omittedFileCount} omitted • ` : ""
     if (this.error) {
-      return fit(this.theme.fg("warning", `⚠ ${this.error} • ? help • q close`), width)
+      return fit(this.theme.fg("warning", `⚠ ${this.error} • ${omissionNotice}? help • q close`), width)
     }
     if (this.statusMessage) {
-      return fit(this.theme.fg("success", `✓ ${this.statusMessage} • ? help • q close`), width)
+      return fit(this.theme.fg("success", `✓ ${this.statusMessage} • ${omissionNotice}? help • q close`), width)
     }
     if (this.document.repositoryState === "missing") {
       return fit(this.theme.fg("dim", "No git repo • I init • ? help • q close"), width)
@@ -95,7 +97,7 @@ export class DiffViewerFrame extends DiffViewerCore {
     return fit(
       this.theme.fg(
         "dim",
-        `focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • b branches • w worktrees • s stash • ^P commands • ? help • q close`,
+        `${omissionNotice}focus:${focusLabel} • tab switch • n/p files • ${arrows}${enterAction} • PgUp/PgDn scroll • Home/End jump • c commits • C commit • b branches • w worktrees • s stash • ^P commands • ? help • q close`,
       ),
       width,
     )
@@ -116,11 +118,8 @@ export class DiffViewerFrame extends DiffViewerCore {
       })
     }
 
-    const rows = buildTreeRows(this.document.files)
-    const selectedRow = Math.max(
-      0,
-      rows.findIndex((row) => row.fileIndex === this.selectedFileIndex),
-    )
+    const rows = this.treeRows()
+    const selectedRow = Math.max(0, this.treeRowIndex(this.selectedFileIndex) ?? 0)
     const start = Math.max(0, Math.min(selectedRow - Math.floor(height / 2), Math.max(0, rows.length - height)))
     const visibleRows = rows.slice(start, start + height)
     const isTreeFocused = this.focusedPanel === "tree"
@@ -146,7 +145,7 @@ export class DiffViewerFrame extends DiffViewerCore {
   }
 
   protected colorTreeFile(line: string, file: DiffFile, selected: boolean): string {
-    const color = selected || file.staged ? "accent" : TREE_STATUS_COLORS[file.status]
+    const color = file.omission ? "warning" : selected || file.staged ? "accent" : TREE_STATUS_COLORS[file.status]
     return this.theme.fg(color, line)
   }
 
@@ -160,7 +159,7 @@ export class DiffViewerFrame extends DiffViewerCore {
       this.diffScroll = 0
       return
     }
-    const diffRows = formatDiffDisplay(file)
+    const diffRows = this.selectedFileDisplay()?.rows ?? []
     const maxScroll = Math.max(0, diffRows.length - (this.viewHeight() - 1))
     this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll))
   }
@@ -183,10 +182,11 @@ export class DiffViewerFrame extends DiffViewerCore {
       })
     }
 
-    const diffRows = formatDiffDisplay(file)
+    const display = this.selectedFileDisplay()
+    const diffRows = display?.rows ?? []
     const maxScroll = Math.max(0, diffRows.length - height)
     this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll))
-    const gutterWidth = this.diffGutterWidth(diffRows)
+    const gutterWidth = display?.gutterWidth ?? 0
     const visible = diffRows
       .slice(this.diffScroll, this.diffScroll + height)
       .map((row) => this.renderDiffDisplayRow(row, file, gutterWidth))
@@ -201,15 +201,6 @@ export class DiffViewerFrame extends DiffViewerCore {
       minWidth: 100,
       theme: this.theme,
     })
-  }
-
-  protected diffGutterWidth(rows: DiffDisplayRow[]): number {
-    return rows.reduce((width, row) => {
-      if (!this.isNumberedDiffRow(row)) {
-        return width
-      }
-      return Math.max(width, String(row.lineNumber).length)
-    }, 0)
   }
 
   protected renderDiffDisplayRow(row: DiffDisplayRow, file: DiffFile, gutterWidth: number): string {
