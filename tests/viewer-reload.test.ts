@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { writeFile } from "node:fs/promises"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { buildCommitDocument } from "../src/diff-document.js"
@@ -6,9 +7,51 @@ import { openDiffViewer } from "../src/extension.js"
 import type { DiffDocument, DiffFile } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  waitForViewerIdle,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
+
+const HISTORICAL_OID = "a".repeat(40)
+const HISTORICAL_BLOB_OID = "b".repeat(40)
+
+function historicalMetadataResult(args: readonly string[], diff: string): ReturnType<typeof gitResult> | undefined {
+  const command = args.join(" ")
+  if (/^rev-parse --verify .+\^\{commit\}$/u.test(command)) return gitResult(`${HISTORICAL_OID}\n`)
+  if (command === `rev-list --parents -n 1 ${HISTORICAL_OID}`) return gitResult(`${HISTORICAL_OID}\n`)
+  if (command === `cat-file -s ${HISTORICAL_BLOB_OID}`) return gitResult(`${Buffer.byteLength(diff)}\n`)
+}
+
+async function historicalOutputResult(
+  args: readonly string[],
+  diff: string,
+  onPatch?: () => void,
+): Promise<ReturnType<typeof gitResult> | undefined> {
+  const outputPath = args.find((arg) => arg.startsWith("--output="))?.slice("--output=".length)
+  if (!outputPath) return
+  if (args.includes("--raw")) {
+    await writeFile(outputPath, `:000000 100644 ${"0".repeat(40)} ${HISTORICAL_BLOB_OID} A\0history.ts\0`)
+    return gitResult()
+  }
+  if (!args.includes("-p")) return
+  onPatch?.()
+  await writeFile(outputPath, diff)
+  return gitResult()
+}
+
+async function historicalCaptureResult(
+  args: readonly string[],
+  diff: string,
+  onPatch?: () => void,
+): Promise<ReturnType<typeof gitResult> | undefined> {
+  return historicalMetadataResult(args, diff) ?? historicalOutputResult(args, diff, onPatch)
+}
 
 async function openWithPi(pi: ExtensionAPI): Promise<DiffViewer> {
   let component: DiffViewer | undefined
@@ -50,6 +93,10 @@ class InspectableViewer extends DiffViewer {
 
   picker(): string {
     return this.pickerState
+  }
+
+  busy(): boolean {
+    return this.isOperationBusy()
   }
 }
 
@@ -167,12 +214,9 @@ test("r reloads the active historical commit rather than the working tree", asyn
     exec: async (_command: string, args: string[], options?: ExecOptions) => {
       const command = args.join(" ")
       if (command === "rev-parse --show-toplevel") return gitResult(`${options?.cwd ?? "/repo"}\n`)
-      if (command === "rev-parse --verify HEAD") return gitResult("abcdef\n")
       if (command === "branch --show-current") return gitResult("main\n")
-      if (args.includes("show") && args.includes(commit.hash)) {
-        showCalls += 1
-        return gitResult(diff)
-      }
+      const historical = await historicalCaptureResult(args, diff, () => showCalls++)
+      if (historical) return historical
       return gitResult("", 93, `unexpected git ${command}`)
     },
   } as ExtensionAPI
@@ -192,7 +236,7 @@ test("r reloads the active historical commit rather than the working tree", asyn
   )
 
   viewer.handleInput("r")
-  await flushViewerWork()
+  await waitForViewerIdle(viewer)
 
   assert.equal(showCalls, 1)
   const current = viewer.currentDocument()
@@ -221,12 +265,13 @@ test("r retries a failed historical selection instead of reloading the previous 
       if (command === "log --max-count=200 --pretty=format:%h%x09%s") {
         return gitResult(`${commit.hash}\t${commit.message}\n`)
       }
-      if (command === "rev-parse --verify HEAD") return gitResult("abcdef\n")
       if (command === "branch --show-current") return gitResult("main\n")
-      if (args.includes("show") && args.includes(commit.hash)) {
+      if (command === `rev-parse --verify ${commit.hash}^{commit}`) {
         showCalls += 1
-        return showCalls === 1 ? gitResult("", 2, "fatal: temporary object read failure") : gitResult(historicalDiff)
+        if (showCalls === 1) return gitResult("", 2, "fatal: temporary object read failure")
       }
+      const historical = await historicalCaptureResult(args, historicalDiff)
+      if (historical) return historical
       if (args.includes("diff")) {
         workingDiffCalls += 1
         return gitResult()
@@ -248,13 +293,13 @@ test("r retries a failed historical selection instead of reloading the previous 
   await flushViewerWork()
   viewer.handleInput("\x1b[B")
   viewer.handleInput("\n")
-  await flushViewerWork()
+  await waitForViewerIdle(viewer)
 
   assert.equal(showCalls, 1)
   assert.match(viewer.render(160).join("\n"), /temporary object read failure/u)
 
   viewer.handleInput("r")
-  await flushViewerWork()
+  await waitForViewerIdle(viewer)
 
   assert.equal(showCalls, 2)
   assert.equal(workingDiffCalls, 0)
@@ -275,9 +320,8 @@ test("a permanent historical-load failure can reopen history or be abandoned wit
         return gitResult(`${commit.hash}\t${commit.message}\n`)
       }
       if (command === "rev-parse --show-toplevel") return gitResult(`${options?.cwd ?? "/repo"}\n`)
-      if (command === "rev-parse --verify HEAD") return gitResult("abcdef\n")
       if (command === "branch --show-current") return gitResult("main\n")
-      if (args.includes("show") && args.includes(commit.hash)) {
+      if (command === `rev-parse --verify ${commit.hash}^{commit}`) {
         showCalls += 1
         return gitResult("", 2, "fatal: permanent historical read failure")
       }

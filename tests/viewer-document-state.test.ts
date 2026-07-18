@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { buildCommitDocument, createDiffSlice } from "../src/diff-document.js"
+import { buildCommitDocument, buildWorkingTreeDocument } from "../src/diff-document.js"
 import type { DiffFile, WorkingTreeDocument } from "../src/types.js"
 import { failedViewerDocument, ViewerDocumentState } from "../src/viewer-document-state.js"
 
@@ -16,15 +16,16 @@ function file(path: string, oldPath?: string, newPath?: string): DiffFile {
 }
 
 function document(files: DiffFile[], title = "Working tree", stagedFiles: DiffFile[] = []): WorkingTreeDocument {
-  return {
-    mode: "working",
+  return buildWorkingTreeDocument({
     title,
     subtitle: "/repo",
     repositoryState: "ready",
     headState: "present",
-    working: createDiffSlice("working", "", files),
-    staged: createDiffSlice("staged", "", stagedFiles),
-  }
+    workingRaw: "",
+    stagedRaw: "",
+    workingOmittedFiles: files,
+    stagedOmittedFiles: stagedFiles,
+  })
 }
 
 test("document replacement preserves selection through rename aliases", () => {

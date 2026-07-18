@@ -182,11 +182,10 @@ test("parseDiff returns empty array for whitespace-only input", () => {
 })
 
 test("parseDiff handles single line diff", () => {
-  // Without ---/+++ lines, the parser can't determine old/new paths, so status is 'modified'
   const raw = "diff --git a/x.txt b/x.txt\nnew file mode 100644"
   const doc = buildDocument("working", "test", "test", raw)
   assert.equal(files(doc).length, 1)
-  assert.equal(files(doc)[0]?.status, "modified")
+  assert.equal(files(doc)[0]?.status, "added")
   assert.equal(files(doc)[0]?.path, "x.txt")
 })
 

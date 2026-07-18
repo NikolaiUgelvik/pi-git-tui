@@ -125,7 +125,9 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
       return
     }
     const cwd = this.activePath()
-    const refresh = this.workingTreeRefreshIntent(cwd, this.documentState.captureSelection())
+    const successScope = command.refresh?.success ?? (command.refreshDiff ? "full" : "none")
+    const failureScope = command.refresh?.failure ?? successScope
+    const refresh = this.workingTreeRefreshIntent(cwd, this.documentState.captureSelection(), successScope)
     this.commandMenuState = "loading"
     this.commandMenuController.state = "loading"
     this.loadingMessage = `Running ${command.label}…`
@@ -137,11 +139,13 @@ export class DiffViewerCommandMenu extends DiffViewerCommitDialog {
       mutate: ({ signal }) => runGitCommand(this.pi, cwd, command, signal),
       successMessage: (message) => message,
       refresh,
-      refreshAfterSuccess: command.refreshDiff,
-      reconcileOnFailure: command.refreshDiff,
+      refreshAfterSuccess: successScope !== "none",
+      reconcileOnFailure: failureScope !== "none",
     })
 
     if (outcome.kind === "mutationFailed") {
+      this.error = outcome.failure.summary
+      this.errorDetails = outcome.failure.details
       this.returnCommandMenuAfterFailure()
     } else if (outcome.kind === "rejected") {
       this.returnCommandMenuAfterFailure()

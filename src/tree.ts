@@ -52,7 +52,7 @@ function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFil
   const displayParts = info.file.path.split("/").filter(Boolean)
   addDirectoryRows(rows, seenDirs, displayParts.slice(0, -1))
   rows.push({
-    label: `${stageStateGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}`,
+    label: `${stageStateGlyph(info.file)} ${statusGlyph(info.file.status)} ${displayParts.at(-1) ?? info.file.path}${info.file.omission ? " (omitted)" : ""}`,
     fileIndex: info.index,
     depth: Math.max(0, displayParts.length - 1),
     isLast: true,
@@ -62,12 +62,9 @@ function addFileRow(rows: TreeRow[], seenDirs: Set<string>, info: IndexedDiffFil
 export function buildTreeRows(files: DiffFile[]): TreeRow[] {
   const rows: TreeRow[] = []
   const seenDirs = new Set<string>()
-  const byPath = new Map(files.map((file, index) => [file.path, { file, index }]))
-  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    const info = byPath.get(file.path)
-    if (info) {
-      addFileRow(rows, seenDirs, info)
-    }
-  }
+  const ordered = files
+    .map((file, index) => ({ file, index }))
+    .sort((left, right) => left.file.path.localeCompare(right.file.path) || left.index - right.index)
+  for (const info of ordered) addFileRow(rows, seenDirs, info)
   return rows
 }

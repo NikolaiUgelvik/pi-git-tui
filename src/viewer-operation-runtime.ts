@@ -13,6 +13,7 @@ export interface ActiveOperation {
   phase: "mutation" | "refresh" | "load" | "retry" | "reconcile"
   controller: AbortController
   cancelRequested: boolean
+  disposeParentAbort?: () => void
 }
 
 export interface OperationExecutionRuntime {

@@ -130,101 +130,126 @@ function isPageDown(data: string): boolean {
  * Generic state container for a filterable list overlay.
  * Manages search query, selection, scroll, and filtered items.
  */
+export interface FilterableListCacheStats {
+  readonly itemsVersion: number
+  readonly filteredSnapshotBuilds: number
+}
+
+interface FilteredSnapshot<T> {
+  readonly itemsVersion: number
+  readonly query: string
+  readonly items: readonly T[]
+}
+
+function immutableItems<T>(items: readonly T[]): readonly T[] {
+  return Object.freeze([...items])
+}
+
 export class FilterableListState<T> {
   public readonly searchField = new SingleLineTextField()
   public selectedIndex = 0
   public scroll = 0
 
+  private itemsSnapshot: readonly T[]
+  private itemsVersion = 0
+  private filteredSnapshot: FilteredSnapshot<T> | undefined
+  private filteredSnapshotBuilds = 0
+
   constructor(
-    /** Full list of items (before filtering). */
-    public items: T[],
-    /** Function that produces a searchable string for each item. */
-    public searchText: (item: T) => string,
-  ) {}
+    items: readonly T[],
+    private readonly searchText: (item: T) => string,
+  ) {
+    this.itemsSnapshot = immutableItems(items)
+  }
+
+  get items(): readonly T[] {
+    return this.itemsSnapshot
+  }
+
+  set items(items: readonly T[]) {
+    this.itemsSnapshot = immutableItems(items)
+    this.itemsVersion++
+    this.filteredSnapshot = undefined
+  }
 
   get searchQuery(): string {
     return this.searchField.value
   }
 
   set searchQuery(value: string) {
+    if (value === this.searchField.value) return
     this.searchField.setValue(value, "end")
+    this.filteredSnapshot = undefined
   }
 
-  /** Items filtered by the current search query. */
-  get filteredItems(): T[] {
-    const tokens = searchTokens(this.searchQuery)
-    if (tokens.length === 0) {
-      return this.items
-    }
-    return this.items.filter((item) => matchesSearch(this.searchText(item), tokens))
+  get filteredItems(): readonly T[] {
+    const query = this.searchQuery
+    const cached = this.filteredSnapshot
+    if (cached?.itemsVersion === this.itemsVersion && cached.query === query) return cached.items
+    const tokens = searchTokens(query)
+    const items =
+      tokens.length === 0
+        ? this.itemsSnapshot
+        : Object.freeze(this.itemsSnapshot.filter((item) => matchesSearch(this.searchText(item), tokens)))
+    this.filteredSnapshot = Object.freeze({ itemsVersion: this.itemsVersion, query, items })
+    this.filteredSnapshotBuilds++
+    return items
   }
 
-  /** Total count of filtered items. */
   get filteredCount(): number {
     return this.filteredItems.length
   }
 
-  /** Get the filtered item at the given index. */
   get(index: number): T | undefined {
     return this.filteredItems[index]
   }
 
-  /** Reset selection and scroll to the beginning. */
+  public cacheStats(): FilterableListCacheStats {
+    return { itemsVersion: this.itemsVersion, filteredSnapshotBuilds: this.filteredSnapshotBuilds }
+  }
+
   public reset(): void {
     this.selectedIndex = 0
     this.scroll = 0
   }
 
-  /** Clamp the selection index to the valid range. */
   public clampSelection(): void {
     this.selectedIndex = Math.max(0, Math.min(Math.max(0, this.filteredCount - 1), this.selectedIndex))
   }
 
-  /** Route editing input to the search field and reset list position on changes. */
   public handleSearchInput(data: string): boolean {
     const before = this.searchQuery
     const handled = this.searchField.handleInput(data, "search")
     if (this.searchQuery !== before) {
+      this.filteredSnapshot = undefined
       this.reset()
     }
     return handled
   }
 
-  /** Append printable text to the search query and reset scroll. */
   public appendSearchChar(char: string): void {
     this.handleSearchInput(char)
   }
 
-  /** Remove the previous grapheme from the search query and reset scroll. */
   public backspaceSearch(): void {
     this.handleSearchInput("\x7f")
   }
 
-  /** Move selection with a navigation key. Returns true if handled. */
   public moveSelection(data: string): boolean {
     const nextIndex = nextListSelectionIndex(data, this.selectedIndex, this.filteredCount)
-    if (nextIndex === undefined) {
-      return false
-    }
+    if (nextIndex === undefined) return false
     this.selectedIndex = nextIndex
     return true
   }
 
-  /** Update scroll position for the current selection. */
-  public updateScroll(maxItems: number): void {
-    this.scroll = nextListScroll(this.selectedIndex, this.scroll, this.filteredCount, maxItems)
-  }
-
-  /** Get visible items after applying scroll. */
   public visibleItems(maxItems: number): Array<{ item: T; index: number }> {
-    this.updateScroll(maxItems)
-    const end = Math.min(this.filteredCount, this.scroll + maxItems)
+    const filteredItems = this.filteredItems
+    this.scroll = nextListScroll(this.selectedIndex, this.scroll, filteredItems.length, maxItems)
+    const end = Math.min(filteredItems.length, this.scroll + maxItems)
     const result: Array<{ item: T; index: number }> = []
-    for (let i = this.scroll; i < end; i++) {
-      const item = this.filteredItems[i]
-      if (item !== undefined) {
-        result.push({ item, index: i })
-      }
+    for (let index = this.scroll; index < end; index++) {
+      const item = filteredItems[index]
+      if (item !== undefined) result.push({ item, index })
     }
     return result
   }

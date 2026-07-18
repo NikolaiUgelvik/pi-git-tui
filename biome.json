@@ -6,7 +6,17 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!node_modules", "!!dist", "!!coverage", "!!.cache", "!!.fallow"],
+    "includes": [
+      "**",
+      "!!node_modules",
+      "!!dist",
+      "!!coverage",
+      "!!.cache",
+      "!!.fallow",
+      "!!.pi-subagents",
+      "!!.tmp-tests",
+      "!!.tmp-typecheck"
+    ],
     "ignoreUnknown": true
   },
   "formatter": {

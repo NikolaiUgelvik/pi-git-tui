@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "noEmit": false,
+    "outDir": "./.tmp-tests",
+    "rootDir": ".",
+    "sourceMap": true,
+    "inlineSources": true,
+    "tsBuildInfoFile": "./.tmp-tests/tsconfig.tsbuildinfo"
+  }
+}

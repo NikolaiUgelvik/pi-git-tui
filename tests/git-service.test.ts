@@ -12,7 +12,6 @@ import { getCommitCount, getCommitMessage, getCommits } from "../src/git-history
 import {
   getStagedPaths,
   stageAllRemaining,
-  stagedDiffForCommitMessage,
   stageRemainingFile,
   unstageAll,
   unstageFile,
@@ -21,12 +20,14 @@ import {
   assertGitSuccess,
   compactGitOutput,
   ensureGitRepository,
-  git,
+  GIT_TIMEOUTS,
   requireGitRepository,
+  runGit,
 } from "../src/git-service.js"
 import { applyStash, dropStash, getStashes, popStash, stashCurrentChanges } from "../src/git-stash-service.js"
 import { getWorktrees, switchWorktree } from "../src/git-worktree-service.js"
-import { GIT_TIMEOUT_MS, type GitExecResult, MAX_COMMIT_MESSAGE_DIFF_CHARS } from "../src/types.js"
+import { GIT_TIMEOUT_MS, type GitExecResult } from "../src/types.js"
+import { workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 type ExecCall = { cmd: string; args: string[]; options?: ExecOptions }
@@ -71,11 +72,11 @@ function createRepoPi(handler: (args: string[], options?: ExecOptions) => GitExe
   })
 }
 
-test("git passes git arguments, cwd, signal, and timeout to pi.exec", async () => {
+test("runGit passes arguments, cwd, signal, and local timeout to pi.exec", async () => {
   const signal = new AbortController().signal
   const { pi, calls } = createPi(() => gitResult("main\n"))
 
-  const result = await git(pi, "/repo", ["branch", "--show-current"], signal)
+  const result = await runGit(pi, "/repo", ["branch", "--show-current"], { signal })
 
   assert.equal(result.stdout, "main\n")
   assert.deepEqual(calls, [
@@ -124,7 +125,11 @@ test("branch service parses branch list and runs branch commands", async () => {
   ])
   assert.equal(await switchBranch(pi, "/repo", "feature-abc"), "Switched to feature-abc")
   assert.equal(await createAndSwitchBranch(pi, "/repo", "new-branch"), "Created and switched to new-branch")
-  assert.ok(calls.some((call) => call.args.join(" ") === "switch feature-abc"))
+  assert.ok(
+    calls.some(
+      (call) => call.args.join(" ") === "switch feature-abc" && call.options?.timeout === GIT_TIMEOUTS.mutation,
+    ),
+  )
 })
 
 test("getBranchName returns current branch or detached HEAD label", async () => {
@@ -169,14 +174,18 @@ test("diff service returns staged and commit range diffs", async () => {
 })
 
 test("index service exposes deterministic stage and unstage operations", async () => {
+  const responses = new Map<string, GitExecResult>([
+    ["--literal-pathspecs ls-files --stage -z -- src/file.ts", gitResult()],
+    ["--literal-pathspecs add --all -- src/file.ts", gitResult()],
+    ["--literal-pathspecs restore --staged -- src/file.ts", gitResult()],
+    ["add --all", gitResult()],
+    ["restore --staged -- .", gitResult()],
+    ["diff --cached --name-only -z", gitResult("src/file.ts\0")],
+  ])
   const { pi } = createRepoPi((args) => {
     const command = args.join(" ")
-    if (command === "add --all -- src/file.ts") return gitResult("")
-    if (command === "restore --staged -- src/file.ts") return gitResult("")
-    if (command === "add --all") return gitResult("")
-    if (command === "restore --staged -- .") return gitResult("")
-    if (command === "diff --cached --name-only -z") return gitResult("src/file.ts\0")
-    return gitResult("", 1, `unexpected ${command}`)
+    const snapshot = args[0] === "status" ? workingSnapshotResult(args, "/repo") : undefined
+    return snapshot ?? responses.get(command) ?? gitResult("", 1, `unexpected ${command}`)
   })
 
   assert.equal(await stageRemainingFile(pi, "/repo", "src/file.ts"), "Staged remaining changes in src/file.ts")
@@ -214,22 +223,6 @@ test("amend permits an empty index and skips the normal-commit guard", async () 
     calls.some((call) => call.args.join(" ") === "diff --cached --quiet --"),
     false,
   )
-})
-
-test("stagedDiffForCommitMessage combines stat and diff and truncates long output", async () => {
-  const longDiff = "x".repeat(MAX_COMMIT_MESSAGE_DIFF_CHARS + 5)
-  const { pi } = createRepoPi((args) => {
-    const command = args.join(" ")
-    if (command === "diff --cached --stat --color=never") return gitResult("stat")
-    if (args.includes("--cached")) return gitResult(longDiff)
-    return gitResult("", 1)
-  })
-
-  const result = await stagedDiffForCommitMessage(pi, "/repo")
-
-  assert.ok(result.startsWith("stat\n\n"))
-  assert.ok(result.endsWith("\n\n[diff truncated]"))
-  assert.equal(result.includes(longDiff), false)
 })
 
 test("stash service parses list and runs stash commands", async () => {
@@ -270,8 +263,8 @@ test("worktree service parses porcelain output and reports switch result", async
   assert.equal(await switchWorktree(pi, "/repo", "/repo-new"), "Switched to worktree at /repo-new")
 })
 
-test("command service runs configured git command", async () => {
-  const { pi } = createRepoPi((args) => {
+test("command service runs configured git command with the network timeout", async () => {
+  const { pi, calls } = createRepoPi((args) => {
     assert.deepEqual(args, ["fetch"])
     return gitResult("updated")
   })
@@ -286,4 +279,5 @@ test("command service runs configured git command", async () => {
     }),
     "Fetch complete: updated",
   )
+  assert.equal(calls.find((call) => call.args[0] === "fetch")?.options?.timeout, GIT_TIMEOUTS.network)
 })

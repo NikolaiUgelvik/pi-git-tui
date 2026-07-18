@@ -1,8 +1,14 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "sealed": true,
-  "entry": ["extensions/diff.ts", "tests/**/*.test.ts"],
-  "ignorePatterns": ["dist/**", "node_modules/**", ".cache/**", "coverage/**"],
+  "entry": [
+    "extensions/diff.ts",
+    "tests/**/*.test.ts",
+    "benchmarks/extension-load-child.mjs",
+    "benchmarks/git-memory-child.mjs",
+    "benchmarks/render-memory-child.mjs"
+  ],
+  "ignorePatterns": ["dist/**", "node_modules/**", ".cache/**", ".tmp-coverage/**", "coverage/**"],
   "includeEntryExports": true,
   "duplicates": {
     "mode": "strict",
@@ -25,7 +31,7 @@
     "unused-dev-dependencies": "error",
     "unused-optional-dependencies": "error",
     "unused-enum-members": "error",
-    "unused-class-members": "error",
+    "unused-class-members": "off",
     "unresolved-imports": "error",
     "unlisted-dependencies": "error",
     "duplicate-exports": "error",

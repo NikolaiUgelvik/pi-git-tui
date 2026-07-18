@@ -196,7 +196,8 @@ test("Enter uses explicit stage-remaining and unstage operations by active view"
         rootCalls += 1
         return rootCalls === 1 ? gitResult(`${options?.cwd ?? "/repo"}\n`) : gitResult("", 2, "refresh failed")
       }
-      if (command === "add --all -- mixed.txt") return gitResult()
+      if (command === "--literal-pathspecs ls-files --stage -z -- mixed.txt") return gitResult()
+      if (command === "--literal-pathspecs add --all -- mixed.txt") return gitResult()
       return gitResult("", 90, `unexpected git ${command}`)
     },
   } as ExtensionAPI
@@ -205,7 +206,7 @@ test("Enter uses explicit stage-remaining and unstage operations by active view"
   workingViewer.handleInput("\n")
   await flushViewerWork()
 
-  assert.equal(workingCommands.filter((command) => command === "add --all -- mixed.txt").length, 1)
+  assert.equal(workingCommands.filter((command) => command === "--literal-pathspecs add --all -- mixed.txt").length, 1)
   assert.ok(!workingCommands.some((command) => command.includes("diff --cached --quiet")))
 
   const stagedCommands: string[] = []
@@ -218,7 +219,8 @@ test("Enter uses explicit stage-remaining and unstage operations by active view"
         rootCalls += 1
         return rootCalls === 1 ? gitResult(`${options?.cwd ?? "/repo"}\n`) : gitResult("", 2, "refresh failed")
       }
-      if (command === "restore --staged -- mixed.txt") return gitResult()
+      if (command === "--literal-pathspecs ls-files --stage -z -- mixed.txt") return gitResult()
+      if (command === "--literal-pathspecs restore --staged -- mixed.txt") return gitResult()
       return gitResult("", 89, `unexpected git ${command}`)
     },
   } as ExtensionAPI
@@ -228,5 +230,8 @@ test("Enter uses explicit stage-remaining and unstage operations by active view"
   stagedViewer.handleInput("\n")
   await flushViewerWork()
 
-  assert.equal(stagedCommands.filter((command) => command === "restore --staged -- mixed.txt").length, 1)
+  assert.equal(
+    stagedCommands.filter((command) => command === "--literal-pathspecs restore --staged -- mixed.txt").length,
+    1,
+  )
 })

@@ -1,5 +1,4 @@
 import { matchesKey } from "@earendil-works/pi-tui"
-import { diffFileOperationPaths } from "./diff-document.js"
 import { stageAllRemaining, stageRemainingFile, unstageAll, unstageFile } from "./git.js"
 import { measureViewerGeometry, SPLIT_LAYOUT_MIN_WIDTH } from "./responsive-geometry.js"
 import { buildTreeRows } from "./tree.js"
@@ -274,9 +273,7 @@ export class DiffViewerNavigationBase extends DiffViewerOperationBase {
       label: `${action} ${file.path}`,
       runningMessage: `${staging ? "Staging remaining changes in" : "Unstaging"} ${file.path}…`,
       mutate: ({ signal }) =>
-        staging
-          ? stageRemainingFile(this.pi, cwd, diffFileOperationPaths(file), signal)
-          : unstageFile(this.pi, cwd, diffFileOperationPaths(file), signal),
+        staging ? stageRemainingFile(this.pi, cwd, file, signal) : unstageFile(this.pi, cwd, file, signal),
       successMessage: (message) => message,
       refresh: this.workingTreeRefreshIntent(cwd, selection),
       reconcileOnFailure: true,

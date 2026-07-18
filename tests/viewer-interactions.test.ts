@@ -6,7 +6,14 @@ import type { ConfirmAction, DiffDocument, DiffFile, GitCommand } from "../src/t
 import { GIT_COMMANDS } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  waitForViewerIdle,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 
@@ -86,6 +93,10 @@ class InteractionViewer extends DiffViewer {
 
   picker(): string {
     return this.pickerState
+  }
+
+  busy(): boolean {
+    return this.isOperationBusy()
   }
 
   clearFeedback(): void {
@@ -286,7 +297,7 @@ test("direct W returns to working mode and preserves the historical path", async
   assert.equal(diffViewer.selectedPath(), "b.ts")
 
   diffViewer.handleInput("W")
-  await flushViewerWork()
+  await waitForViewerIdle(diffViewer)
 
   assert.equal(diffViewer.currentMode(), "working")
   assert.equal(diffViewer.selectedPath(), "b.ts")

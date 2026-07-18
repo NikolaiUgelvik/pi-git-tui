@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
-import { buildCommitDocument, createDiffSlice } from "../src/diff-document.js"
+import { buildCommitDocument, buildWorkingTreeDocument, createDiffSlice } from "../src/diff-document.js"
 import { renderScrollbar } from "../src/scrollbar.js"
 import type { DiffDocument, DiffFile, WorkingTreeDocument } from "../src/types.js"
 import { DiffViewerCore } from "../src/viewer-core.js"
@@ -57,15 +57,14 @@ const theme = {
   bold: (text: string) => text,
 } as Theme
 
-const emptyDocument: WorkingTreeDocument = {
-  mode: "working",
+const emptyDocument: WorkingTreeDocument = buildWorkingTreeDocument({
   title: "Diff",
   subtitle: "Working tree",
   repositoryState: "ready",
   headState: "present",
-  working: createDiffSlice("working", ""),
-  staged: createDiffSlice("staged", ""),
-}
+  workingRaw: "",
+  stagedRaw: "",
+})
 
 function createViewer<T extends DiffViewerCore>(
   Viewer: new (...args: ConstructorParameters<typeof DiffViewerCore>) => T,

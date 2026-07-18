@@ -1,114 +1,177 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { buildCommitDocument, buildWorkingTreeDocument, emptyWorkingTreeDocument } from "./diff-document.js"
-import { listUntrackedFiles } from "./git-file-list-service.js"
-import { assertGitSuccess, ensureGitRepository, git, isUnbornHeadResult, requireGitRepository } from "./git-service.js"
-import { conflictedPaths, currentBranchStatusLabel } from "./git-status.js"
-import type { CommitDocument, CommitSummary, HeadState, WorkingTreeDocument } from "./types.js"
-import { readUntrackedDiffPreviews } from "./untracked-preview-service.js"
+import { captureTrackedDiff, type TrackedDiffCapture } from "./git-diff-capture.js"
+import { captureHistoricalDiff } from "./git-historical-diff-capture.js"
+import { ensureGitRepository, requireGitRepository, runGit, throwIfGitAborted } from "./git-service.js"
+import { loadWorkingTreeSnapshot, type WorkingTreeSnapshot, workingTreeBranchLabel } from "./git-status.js"
+import { loadUntrackedDiffs, type UntrackedDiffResult } from "./git-untracked-service.js"
+import { linkedAbortController } from "./git-worker-pool.js"
+import { workingTreeContentIdentity } from "./git-working-tree-identity.js"
+import type {
+  CommitDocument,
+  CommitSummary,
+  DiffFile,
+  HeadState,
+  WorkingTreeDocument,
+  WorkingTreeRevision,
+} from "./types.js"
 
 const BASE_DIFF_ARGS = [
   "-c",
   "core.quotepath=false",
   "diff",
   "--no-ext-diff",
+  "--no-textconv",
+  "--ignore-submodules=none",
   "--find-renames",
   "--find-copies",
   "--color=never",
-]
+] as const
 
-async function loadHeadState(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<HeadState> {
-  const args = ["rev-parse", "--verify", "HEAD"]
-  const result = await git(pi, cwd, args, signal)
-  if (result.code === 0 && !result.killed) {
-    return "present"
-  }
-  if (isUnbornHeadResult(result)) {
-    return "unborn"
-  }
-  assertGitSuccess(result, args, cwd)
-  return "present"
-}
-
-async function currentBranchLabel(
-  pi: ExtensionAPI,
-  cwd: string,
-  headState: HeadState,
-  signal?: AbortSignal,
-): Promise<string | undefined> {
-  const branchArgs = ["branch", "--show-current"]
-  const branchResult = await git(pi, cwd, branchArgs, signal)
-  assertGitSuccess(branchResult, branchArgs, cwd)
-  const branch = branchResult.stdout.trim()
-  if (branch) {
-    return branch
-  }
-  if (headState === "unborn") {
-    return
-  }
-
-  const headArgs = ["rev-parse", "--short", "HEAD"]
-  const headResult = await git(pi, cwd, headArgs, signal)
-  assertGitSuccess(headResult, headArgs, cwd)
-  const head = headResult.stdout.trim()
-  if (!head) {
-    throw new Error("git rev-parse returned an empty detached HEAD")
-  }
-  return `detached ${head}`
+function headState(snapshot: WorkingTreeSnapshot): HeadState {
+  return snapshot.head.kind === "initial" ? "unborn" : "present"
 }
 
 function repositoryLabel(root: string, branch: string | undefined): string {
   return branch ? `${root} (${branch})` : root
 }
 
+export function workingTreeDocumentTitle(snapshot: WorkingTreeSnapshot): string {
+  return snapshot.head.kind === "initial" ? "Working tree and index (no commits yet)" : "Working tree and index"
+}
+
+export function workingTreeDocumentSubtitle(root: string, snapshot: WorkingTreeSnapshot): string {
+  return repositoryLabel(root, workingTreeBranchLabel(snapshot))
+}
+
+export function workingTreeRevision(
+  root: string,
+  snapshot: WorkingTreeSnapshot,
+  contentIdentity: string,
+): WorkingTreeRevision {
+  return { root, statusFingerprint: snapshot.statusFingerprint, contentIdentity, clean: snapshot.clean }
+}
+
 function commitSubtitle(root: string, branch: string | undefined, message: string): string {
-  const repo = repositoryLabel(root, branch)
-  return message ? `${repo} • ${message}` : repo
+  const repository = repositoryLabel(root, branch)
+  return message ? `${repository} • ${message}` : repository
 }
 
-function joinDiffParts(parts: string[]): string {
-  return parts.filter((part) => part.length > 0).join("\n")
+function joinDiffParts(parts: readonly string[]): string {
+  return parts.filter(Boolean).join("\n")
 }
 
-function stagedDiffArgs(): string[] {
-  return [...BASE_DIFF_ARGS, "--cached", "--"]
+function untrackedRole(snapshot: WorkingTreeSnapshot, path: string): DiffFile["untrackedRole"] {
+  if (snapshot.entries.some((entry) => entry.path === path && entry.indexStatus === "D")) return "replacement"
+  if (snapshot.entries.some((entry) => entry.originalPath === path)) return "rename-source"
 }
 
-function workingDiffArgs(): string[] {
-  return [...BASE_DIFF_ARGS, "--"]
-}
-
-export async function loadWorkingTreeDocument(pi: ExtensionAPI, ctx: ExtensionContext): Promise<WorkingTreeDocument> {
-  const root = await ensureGitRepository(pi, ctx.cwd, ctx.signal)
-  if (!root) {
-    return emptyWorkingTreeDocument("Not a git repository", ctx.cwd, "missing")
+function untrackedOmittedFile(
+  result: Extract<UntrackedDiffResult, { kind: "omitted" }>,
+  snapshot: WorkingTreeSnapshot,
+): DiffFile {
+  return {
+    path: result.path,
+    oldPath: "/dev/null",
+    newPath: result.path,
+    status: "added",
+    staged: false,
+    untracked: true,
+    ...(untrackedRole(snapshot, result.path) === undefined
+      ? {}
+      : { untrackedRole: untrackedRole(snapshot, result.path) }),
+    lines: [],
+    omission: result.omission,
   }
-
-  const headState = await loadHeadState(pi, root, ctx.signal)
-  const branch = await currentBranchLabel(pi, root, headState, ctx.signal)
-  const stagedArgs = stagedDiffArgs()
-  const workingArgs = workingDiffArgs()
-  const [stagedResult, workingResult, untracked, conflicts, branchStatus] = await Promise.all([
-    git(pi, root, stagedArgs, ctx.signal),
-    git(pi, root, workingArgs, ctx.signal),
-    listUntrackedFiles(pi, root, ctx.signal),
-    conflictedPaths(pi, root, ctx.signal),
-    headState === "unborn" ? Promise.resolve(branch) : currentBranchStatusLabel(pi, root, branch, ctx.signal),
-  ])
-  assertGitSuccess(stagedResult, stagedArgs, root)
-  assertGitSuccess(workingResult, workingArgs, root)
-  const untrackedDiffs = await readUntrackedDiffPreviews(pi, root, untracked, headState, ctx.signal)
-  const includedUntracked = untrackedDiffs.filter((preview) => preview.include)
-  const title = headState === "present" ? "Working tree and index" : "Working tree and index (no commits yet)"
-  return buildWorkingTreeDocument({
-    title,
-    subtitle: repositoryLabel(root, branchStatus),
-    stagedRaw: stagedResult.stdout,
-    workingRaw: joinDiffParts([workingResult.stdout, ...includedUntracked.map((preview) => preview.raw)]),
-    untrackedPaths: includedUntracked.map((preview) => preview.path),
-    conflictedPaths: conflicts,
-    headState,
-  })
 }
+
+const EMPTY_TRACKED_CAPTURE: TrackedDiffCapture = {
+  raw: "",
+  omittedFiles: [],
+  capturedPatchBytes: 0,
+  capturedPatchLines: 0,
+}
+
+function captureMetrics(capture: TrackedDiffCapture): { bytes: number; lines: number } {
+  return { bytes: capture.capturedPatchBytes, lines: capture.capturedPatchLines }
+}
+
+function applySnapshotMetadata(files: DiffFile[], snapshot: WorkingTreeSnapshot): void {
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index]
+    if (!file) continue
+    const aliases = new Set([file.path, file.oldPath, file.newPath].filter((path): path is string => Boolean(path)))
+    const entry = snapshot.entries.find(
+      (candidate) => aliases.has(candidate.path) || (candidate.originalPath && aliases.has(candidate.originalPath)),
+    )
+    if (entry?.submodule.startsWith("S")) files[index] = { ...file, submodule: entry.submodule }
+  }
+}
+
+export async function loadWorkingTreeDiffFromSnapshot(
+  pi: ExtensionAPI,
+  root: string,
+  snapshot: WorkingTreeSnapshot,
+  signal?: AbortSignal,
+): Promise<WorkingTreeDocument> {
+  throwIfGitAborted(signal)
+  const hasStaged = snapshot.entries.some((entry) => entry.indexStatus !== "." || entry.kind === "unmerged")
+  const hasWorking = snapshot.entries.some((entry) => entry.worktreeStatus !== "." || entry.kind === "unmerged")
+  const staged = hasStaged
+    ? await captureTrackedDiff(pi, root, snapshot, undefined, signal, "staged")
+    : EMPTY_TRACKED_CAPTURE
+  throwIfGitAborted(signal)
+  const working = hasWorking
+    ? await captureTrackedDiff(pi, root, snapshot, undefined, signal, "working")
+    : EMPTY_TRACKED_CAPTURE
+  throwIfGitAborted(signal)
+  const untracked = await loadUntrackedDiffs(pi, root, snapshot, undefined, signal)
+  throwIfGitAborted(signal)
+  const contentIdentity = await workingTreeContentIdentity(root, snapshot, signal)
+  throwIfGitAborted(signal)
+
+  const untrackedPatches = untracked.flatMap((result) => (result.kind === "patch" ? [result.raw] : []))
+  const untrackedOmissions = untracked.flatMap((result) =>
+    result.kind === "omitted" ? [untrackedOmittedFile(result, snapshot)] : [],
+  )
+  const document = buildWorkingTreeDocument({
+    title: workingTreeDocumentTitle(snapshot),
+    subtitle: workingTreeDocumentSubtitle(root, snapshot),
+    stagedRaw: staged.raw,
+    workingRaw: joinDiffParts([working.raw, ...untrackedPatches]),
+    untrackedPaths: snapshot.untrackedPaths,
+    conflictedPaths: snapshot.conflictedPaths,
+    stagedOmittedFiles: staged.omittedFiles,
+    workingOmittedFiles: [...working.omittedFiles, ...untrackedOmissions],
+    stagedCapture: captureMetrics(staged),
+    workingCapture: {
+      bytes:
+        working.capturedPatchBytes + untrackedPatches.reduce((total, patch) => total + Buffer.byteLength(patch), 0),
+      lines:
+        working.capturedPatchLines + untrackedPatches.reduce((total, patch) => total + patch.split("\n").length, 0),
+    },
+    headState: headState(snapshot),
+    revision: workingTreeRevision(root, snapshot, contentIdentity),
+  })
+  applySnapshotMetadata(document.staged.files, snapshot)
+  applySnapshotMetadata(document.working.files, snapshot)
+  return document
+}
+
+export async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionContext): Promise<WorkingTreeDocument> {
+  const linked = linkedAbortController(ctx.signal)
+  const signal = linked.controller.signal
+  try {
+    const root = await ensureGitRepository(pi, ctx.cwd, signal)
+    if (!root) return emptyWorkingTreeDocument("Not a git repository", ctx.cwd, "missing")
+    const snapshot = await loadWorkingTreeSnapshot(pi, root, signal)
+    return await loadWorkingTreeDiffFromSnapshot(pi, root, snapshot, signal)
+  } finally {
+    linked.dispose()
+  }
+}
+
+export const loadWorkingTreeDocument = loadWorkingTreeDiff
 
 export interface CommitDocumentRequest {
   cwd: string
@@ -118,37 +181,21 @@ export interface CommitDocumentRequest {
 
 export async function loadCommitDocument(pi: ExtensionAPI, request: CommitDocumentRequest): Promise<CommitDocument> {
   const root = await requireGitRepository(pi, request.cwd, request.signal)
-  const headState = await loadHeadState(pi, root, request.signal)
-  const branch = await currentBranchLabel(pi, root, headState, request.signal)
-  const args = [
-    "-c",
-    "core.quotepath=false",
-    "show",
-    "--format=",
-    "--no-ext-diff",
-    "--find-renames",
-    "--find-copies",
-    "--color=never",
-    request.commit.hash,
-    "--",
-  ]
-  const result = await git(pi, root, args, request.signal)
-  assertGitSuccess(result, args, root)
+  const branch = (await runGit(pi, root, ["branch", "--show-current"], { signal: request.signal })).stdout.trim()
+  const capture = await captureHistoricalDiff(pi, root, request.commit.hash, undefined, request.signal)
   return buildCommitDocument({
     title: `Commit ${request.commit.hash}`,
-    subtitle: commitSubtitle(root, branch, request.commit.message),
-    raw: result.stdout,
+    subtitle: commitSubtitle(root, branch || undefined, request.commit.message),
+    raw: capture.raw,
+    omittedFiles: capture.omittedFiles,
+    capture: { bytes: capture.capturedPatchBytes, lines: capture.capturedPatchLines },
     commit: request.commit,
-    headState,
   })
 }
 
 export async function getStagedDiff(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = stagedDiffArgs()
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
-  return result.stdout
+  return (await runGit(pi, root, [...BASE_DIFF_ARGS, "--cached", "--"], { signal })).stdout
 }
 
 export async function getCommitRangeDiff(
@@ -159,8 +206,5 @@ export async function getCommitRangeDiff(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = [...BASE_DIFF_ARGS, `${from}...${to}`, "--"]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
-  return result.stdout
+  return (await runGit(pi, root, [...BASE_DIFF_ARGS, `${from}...${to}`, "--"], { signal })).stdout
 }

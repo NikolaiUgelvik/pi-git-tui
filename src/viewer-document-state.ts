@@ -8,6 +8,9 @@ export type DiffLoadRequest = { kind: "working"; cwd: string } | { kind: "commit
 export interface DocumentSelection {
   preferredPath?: string
   aliases: string[]
+  status?: DiffFile["status"]
+  stageState?: DiffFile["stageState"]
+  untracked?: boolean
 }
 
 export interface DocumentLoadFailure extends FailureDetails {
@@ -170,7 +173,13 @@ export class ViewerDocumentState {
       ? this.files.find((file) => diffFileAliases(file).includes(preferredPath))
       : this.files[this._selectedFileIndex]
     const aliases = diffFileAliases(selected)
-    return { preferredPath: preferredPath ?? selected?.path, aliases }
+    return {
+      preferredPath: preferredPath ?? selected?.path,
+      aliases,
+      status: selected?.status,
+      stageState: selected?.stageState,
+      untracked: selected?.untracked,
+    }
   }
 
   replaceDocument(
@@ -188,6 +197,13 @@ export class ViewerDocumentState {
     this._selectedFileIndex = this.selectionIndex(document, selection)
     this._diffColumn = 0
     this._diffScroll = 0
+  }
+
+  updateMetadata(document: DiffDocument): void {
+    this._document = document
+    this._failure = undefined
+    this._failedTarget = undefined
+    this._reloadRequest = undefined
   }
 
   recordLoadFailure(request: DiffLoadRequest, error: unknown): DocumentLoadFailure {
@@ -235,7 +251,15 @@ export class ViewerDocumentState {
     if (aliases.size === 0) {
       return firstTreeFile
     }
-    const index = files.findIndex((file) => diffFileAliases(file).some((path) => aliases.has(path)))
-    return index < 0 ? firstTreeFile : index
+    const candidates = files
+      .map((file, index) => ({ file, index }))
+      .filter(({ file }) => diffFileAliases(file).some((path) => aliases.has(path)))
+    const exact = candidates.find(
+      ({ file }) =>
+        file.status === selection.status &&
+        file.stageState === selection.stageState &&
+        Boolean(file.untracked) === Boolean(selection.untracked),
+    )
+    return exact?.index ?? candidates[0]?.index ?? firstTreeFile
   }
 }

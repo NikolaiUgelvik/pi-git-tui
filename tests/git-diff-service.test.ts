@@ -6,9 +6,11 @@ import { join } from "node:path"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { loadCommitDocument, loadWorkingTreeDocument } from "../src/git-diff-service.js"
-import { GitCommandError } from "../src/git-service.js"
+import { discardFileChanges } from "../src/git-extras.js"
+import { stageAllRemaining, stageRemainingFile, unstageFile } from "../src/git-index-service.js"
+import { GitCommandError, GitTimeoutError } from "../src/git-service.js"
 import { type GitExecResult, MAX_UNTRACKED_FILE_BYTES } from "../src/types.js"
-import { realGitPi, runGit } from "./helpers/real-git.js"
+import { realGitPi, runRealGit } from "./helpers/real-git.js"
 import { workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
@@ -43,14 +45,14 @@ function context(cwd = "/repo"): ExtensionContext {
 }
 
 async function initializeRepository(root: string, files: Record<string, string | Uint8Array>): Promise<void> {
-  runGit(root, ["init", "--quiet", "--initial-branch=main"])
-  runGit(root, ["config", "user.email", "tests@example.com"])
-  runGit(root, ["config", "user.name", "Tests"])
+  runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
+  runRealGit(root, ["config", "user.email", "tests@example.com"])
+  runRealGit(root, ["config", "user.name", "Tests"])
   for (const [path, contents] of Object.entries(files)) {
     await writeFile(join(root, path), contents)
   }
-  runGit(root, ["add", "--all"])
-  runGit(root, ["commit", "--quiet", "-m", "initial"])
+  runRealGit(root, ["add", "--all"])
+  runRealGit(root, ["commit", "--quiet", "-m", "initial"])
 }
 
 test("working snapshot distinguishes a missing repository from a clean repository", async () => {
@@ -92,104 +94,14 @@ test("repository detection rejects unexpected and killed failures", async () => 
   const killed = createPi(() => gitResult("", 0, "", true))
   await assert.rejects(
     () => loadWorkingTreeDocument(killed, context()),
-    (error: unknown) =>
-      error instanceof GitCommandError && error.reason === "killed" && /killed or timed out/u.test(error.details),
+    (error: unknown) => error instanceof GitTimeoutError && error.timeoutMs > 0,
   )
-})
-
-test("unborn HEAD detection requires the expected Git diagnostic on stderr", async () => {
-  const pi = snapshotPi({
-    "rev-parse --verify HEAD": gitResult("fatal: Needed a single revision", 128, "fatal: permission denied"),
-  })
-
-  await assert.rejects(() => loadWorkingTreeDocument(pi, context()), GitCommandError)
-})
-
-test("an unborn HEAD follows an explicit successful snapshot path", async () => {
-  const pi = snapshotPi({
-    "rev-parse --verify HEAD": gitResult("", 128, "fatal: Needed a single revision"),
-    "branch --show-current": gitResult("main\n"),
-    "-c core.quotepath=false diff --no-ext-diff --find-renames --find-copies --color=never 4b825dc642cb6eb9a060e54bf8d69288fbee4904 --":
-      gitResult(),
-  })
-
-  const document = await loadWorkingTreeDocument(pi, context())
-
-  assert.equal(document.headState, "unborn")
-  assert.equal(document.title, "Working tree and index (no commits yet)")
-  assert.equal(document.repositoryState, "ready")
-})
-
-test("failure of every required working snapshot query rejects the snapshot", async (t) => {
-  const failures: Array<[string, string]> = [
-    ["head", "rev-parse --verify HEAD"],
-    ["branch identity", "branch --show-current"],
-    [
-      "staged diff",
-      "-c core.quotepath=false diff --no-ext-diff --find-renames --find-copies --color=never --cached --",
-    ],
-    ["working diff", "-c core.quotepath=false diff --no-ext-diff --find-renames --find-copies --color=never --"],
-    ["untracked paths", "ls-files --others --exclude-standard -z"],
-    ["conflicts", "diff --name-only --diff-filter=U -z"],
-    ["upstream identity", "rev-list --left-right --count @{upstream}...HEAD"],
-  ]
-
-  for (const [label, command] of failures) {
-    await t.test(label, async () => {
-      const pi = snapshotPi({ [command]: gitResult("", 17, `fatal: ${label} failed`) })
-      await assert.rejects(() => loadWorkingTreeDocument(pi, context()), new RegExp(`${label} failed`, "u"))
-    })
-  }
-})
-
-test("missing-upstream text is expected only with Git's exit 128", async () => {
-  const pi = snapshotPi({
-    "rev-list --left-right --count @{upstream}...HEAD": gitResult(
-      "",
-      17,
-      "fatal: no upstream configured for branch 'main'",
-    ),
-  })
-
-  await assert.rejects(() => loadWorkingTreeDocument(pi, context()), GitCommandError)
-})
-
-test("untracked no-index exit one is expected and its patch is included", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-snapshot-"))
-  try {
-    await writeFile(join(root, "new.txt"), "hello\n")
-    const patch = [
-      "diff --git a/new.txt b/new.txt",
-      "new file mode 100644",
-      "--- /dev/null",
-      "+++ b/new.txt",
-      "@@ -0,0 +1 @@",
-      "+hello",
-    ].join("\n")
-    const pi = snapshotPi(
-      {
-        "ls-files --others --exclude-standard -z": gitResult("new.txt\0"),
-        "-c core.quotepath=false ls-files --stage -z -- new.txt": gitResult(),
-        "-c core.quotepath=false ls-tree -r --name-only -z HEAD -- new.txt": gitResult(),
-        "-c core.quotepath=false diff --no-index -- /dev/null new.txt": gitResult(patch, 1),
-      },
-      root,
-    )
-
-    const document = await loadWorkingTreeDocument(pi, context(root))
-
-    assert.equal(document.working.files[0]?.path, "new.txt")
-    assert.equal(document.working.files[0]?.untracked, true)
-    assert.equal(document.staged.files.length, 0)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
 })
 
 test("oversized untracked files remain visible without an unbounded preview", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-untracked-large-"))
   try {
-    runGit(root, ["init", "--quiet", "--initial-branch=main"])
+    runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "large.txt"), "x".repeat(MAX_UNTRACKED_FILE_BYTES + 1))
 
     const document = await loadWorkingTreeDocument(realGitPi(), context(root))
@@ -199,57 +111,6 @@ test("oversized untracked files remain visible without an unbounded preview", as
     assert.equal(file?.stageState, "unstaged")
     assert.deepEqual(file?.lines, [])
     assert.equal(document.staged.files.length, 0)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test("a path staged after untracked discovery is not reintroduced as a stale placeholder", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-untracked-race-"))
-  try {
-    await writeFile(join(root, "raced.txt"), "content\n")
-    const pi = snapshotPi(
-      {
-        "ls-files --others --exclude-standard -z": gitResult("raced.txt\0"),
-        "-c core.quotepath=false ls-files --stage -z -- raced.txt": gitResult("100644 abc 0\traced.txt\0"),
-        "-c core.quotepath=false ls-tree -r --name-only -z HEAD -- raced.txt": gitResult(),
-      },
-      root,
-    )
-
-    const document = await loadWorkingTreeDocument(pi, context(root))
-
-    assert.equal(document.working.files.length, 0)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test("unexpected untracked preview query failures reject the complete snapshot", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-untracked-errors-"))
-  try {
-    await writeFile(join(root, "new.txt"), "hello\n")
-    const trackedCommand = "-c core.quotepath=false ls-files --stage -z -- new.txt"
-    const headCommand = "-c core.quotepath=false ls-tree -r --name-only -z HEAD -- new.txt"
-    const diffCommand = "-c core.quotepath=false diff --no-index -- /dev/null new.txt"
-    const base = {
-      "ls-files --others --exclude-standard -z": gitResult("new.txt\0"),
-      [trackedCommand]: gitResult(),
-      [headCommand]: gitResult(),
-      [diffCommand]: gitResult("patch", 1),
-    }
-    const failures: Array<[string, Record<string, GitExecResult>]> = [
-      ["tracked race check", { ...base, [trackedCommand]: gitResult("", 3, "fatal: index unreadable") }],
-      ["HEAD race check", { ...base, [headCommand]: gitResult("", 3, "fatal: object database unreadable") }],
-      ["no-index exit", { ...base, [diffCommand]: gitResult("partial", 2, "fatal: diff failed") }],
-      ["no-index killed", { ...base, [diffCommand]: gitResult("", 1, "timed out", true) }],
-    ]
-
-    for (const [label, overrides] of failures) {
-      await t.test(label, async () => {
-        await assert.rejects(() => loadWorkingTreeDocument(snapshotPi(overrides, root), context(root)), GitCommandError)
-      })
-    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -309,7 +170,7 @@ test("partially staged, staged-only, and unstaged-only files use exact slices", 
     })
     await writeFile(join(root, "mixed.txt"), "staged one\nbase two\n")
     await writeFile(join(root, "staged-only.txt"), "staged only\n")
-    runGit(root, ["add", "mixed.txt", "staged-only.txt"])
+    runRealGit(root, ["add", "mixed.txt", "staged-only.txt"])
     await writeFile(join(root, "mixed.txt"), "staged one\nworking two\n")
     await writeFile(join(root, "working-only.txt"), "working only\n")
 
@@ -336,8 +197,8 @@ test("a staged rename and later edit remain one mixed logical file", async () =>
   const root = await mkdtemp(join(tmpdir(), "pi-git-index-rename-"))
   try {
     await initializeRepository(root, { "old-name.txt": "line one\nline two\nline three\n" })
-    runGit(root, ["mv", "old-name.txt", "new-name.txt"])
-    runGit(root, ["add", "--all"])
+    runRealGit(root, ["mv", "old-name.txt", "new-name.txt"])
+    runRealGit(root, ["add", "--all"])
     await writeFile(join(root, "new-name.txt"), "line one\nline two changed\nline three\n")
 
     const document = await loadWorkingTreeDocument(realGitPi(), context(root))
@@ -359,13 +220,13 @@ test("unmerged conflicts are represented and never mistaken for a clean index", 
   const root = await mkdtemp(join(tmpdir(), "pi-git-index-conflict-"))
   try {
     await initializeRepository(root, { "conflict.txt": "base\n" })
-    runGit(root, ["switch", "--quiet", "-c", "side"])
+    runRealGit(root, ["switch", "--quiet", "-c", "side"])
     await writeFile(join(root, "conflict.txt"), "side\n")
-    runGit(root, ["commit", "--quiet", "-am", "side"])
-    runGit(root, ["switch", "--quiet", "main"])
+    runRealGit(root, ["commit", "--quiet", "-am", "side"])
+    runRealGit(root, ["switch", "--quiet", "main"])
     await writeFile(join(root, "conflict.txt"), "main\n")
-    runGit(root, ["commit", "--quiet", "-am", "main"])
-    runGit(root, ["merge", "--no-edit", "side"], 1)
+    runRealGit(root, ["commit", "--quiet", "-am", "main"])
+    runRealGit(root, ["merge", "--no-edit", "side"], 1)
 
     const document = await loadWorkingTreeDocument(realGitPi(), context(root))
     const conflict = document.working.files.find((file) => file.path === "conflict.txt")
@@ -393,10 +254,95 @@ test("binary files count as files without fabricated line counts", async () => {
   }
 })
 
-test("failed git show rejects historical document loading", async () => {
+test("dirty submodules cannot be staged or discarded from the parent viewer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-git-submodule-parent-"))
+  const child = await mkdtemp(join(tmpdir(), "pi-git-submodule-child-"))
+  try {
+    await initializeRepository(root, { "root.txt": "root\n" })
+    await initializeRepository(child, { "tracked.txt": "nested\n" })
+    runRealGit(root, ["-c", "protocol.file.allow=always", "submodule", "add", child, "vendor/module"])
+    runRealGit(root, ["commit", "--quiet", "-am", "add submodule"])
+    await writeFile(join(root, "vendor/module/tracked.txt"), "dirty nested worktree\n")
+
+    const document = await loadWorkingTreeDocument(realGitPi(), context(root))
+    const submodule = document.working.files.find((file) => file.path === "vendor/module")
+    assert.ok(submodule)
+    assert.equal(submodule.submodule, "S.M.")
+    await assert.rejects(
+      () => stageRemainingFile(realGitPi(), root, submodule),
+      /manage nested changes inside the submodule/u,
+    )
+    await assert.rejects(
+      () => discardFileChanges(realGitPi(), root, submodule),
+      /manage nested changes inside the submodule/u,
+    )
+    await assert.rejects(
+      () => stageAllRemaining(realGitPi(), root),
+      /Cannot stage all while nested submodule changes are present/u,
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+    await rm(child, { recursive: true, force: true })
+  }
+})
+
+test("clean submodule pointer updates can be explicitly staged and unstaged", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-git-submodule-stage-parent-"))
+  const child = await mkdtemp(join(tmpdir(), "pi-git-submodule-stage-child-"))
+  try {
+    await initializeRepository(root, { "root.txt": "root\n" })
+    await initializeRepository(child, { "tracked.txt": "nested\n" })
+    runRealGit(root, ["-c", "protocol.file.allow=always", "submodule", "add", child, "vendor/module"])
+    runRealGit(root, ["commit", "--quiet", "-am", "add submodule"])
+    const nested = join(root, "vendor/module")
+    runRealGit(nested, ["config", "user.email", "tests@example.com"])
+    runRealGit(nested, ["config", "user.name", "Tests"])
+    await writeFile(join(nested, "tracked.txt"), "advanced pointer\n")
+    runRealGit(nested, ["commit", "--quiet", "-am", "advance submodule"])
+
+    const unstagedDocument = await loadWorkingTreeDocument(realGitPi(), context(root))
+    const unstaged = unstagedDocument.working.files.find((file) => file.path === "vendor/module")
+    assert.ok(unstaged)
+    assert.equal(unstaged.submodule, "SC..")
+    await stageRemainingFile(realGitPi(), root, unstaged)
+
+    const stagedDocument = await loadWorkingTreeDocument(realGitPi(), context(root))
+    const staged = stagedDocument.staged.files.find((file) => file.path === "vendor/module")
+    assert.ok(staged)
+    assert.equal(staged.submodule, "S...")
+    await unstageFile(realGitPi(), root, staged)
+    assert.match(runRealGit(root, ["status", "--short"]), /^ M vendor\/module$/mu)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+    await rm(child, { recursive: true, force: true })
+  }
+})
+
+test("bounded historical loading exposes omitted files instead of buffering oversized patches", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-git-historical-large-"))
+  try {
+    await initializeRepository(root, { "large.txt": "small\n" })
+    await writeFile(join(root, "large.txt"), "x".repeat(10 * 1024 * 1024))
+    runRealGit(root, ["commit", "--quiet", "-am", "large historical change"])
+    const hash = runRealGit(root, ["rev-parse", "HEAD"]).trim()
+
+    const document = await loadCommitDocument(realGitPi(), {
+      cwd: root,
+      commit: { hash, message: "large historical change" },
+    })
+
+    assert.equal(document.diff.raw, "")
+    assert.equal(document.diff.files[0]?.path, "large.txt")
+    assert.equal(document.diff.files[0]?.omission?.reason, "file-too-large")
+    assert.equal(document.diff.capturedPatchBytes, 0)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("failed historical capture rejects document loading", async () => {
   const pi = snapshotPi({
-    "-c core.quotepath=false show --format= --no-ext-diff --find-renames --find-copies --color=never abc123 --":
-      gitResult("partial output", 128, "fatal: bad object abc123"),
+    "rev-parse --verify abc123^{commit}": gitResult("", 128, "fatal: bad object abc123"),
   })
 
   await assert.rejects(

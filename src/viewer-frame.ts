@@ -3,13 +3,19 @@ import { renderDiffViewport } from "./diff-viewport.js"
 import { fit } from "./render-text.js"
 import { measureViewerGeometry, SPLIT_LAYOUT_MIN_WIDTH, type ViewerGeometry } from "./responsive-geometry.js"
 import { renderScrollbar } from "./scrollbar.js"
-import { buildTreeRows } from "./tree.js"
 import { type DiffFile, type FocusPanel, TREE_STATUS_COLORS } from "./types.js"
 import { DiffViewerCore } from "./viewer-core.js"
 import { prioritizedFooter, viewerFooterActions } from "./viewer-footer-actions.js"
+import { ViewerRenderCache, type ViewerRenderCacheStats } from "./viewer-render-cache.js"
 
 export class DiffViewerFrame extends DiffViewerCore {
   private diffMaximumColumn = 0
+  private readonly renderCache = new ViewerRenderCache([])
+
+  protected renderCacheStats(): ViewerRenderCacheStats {
+    this.renderCache.replaceDocument(this.files)
+    return this.renderCache.stats()
+  }
   render(width: number): string[] {
     const geometry = measureViewerGeometry({
       width,
@@ -265,7 +271,8 @@ export class DiffViewerFrame extends DiffViewerCore {
       })
     }
 
-    const rows = buildTreeRows(this.files)
+    this.renderCache.replaceDocument(this.files)
+    const rows = this.renderCache.treeRows()
     const selectedRow = Math.max(
       0,
       rows.findIndex((row) => row.fileIndex === this.selectedFileIndex),
@@ -319,8 +326,11 @@ export class DiffViewerFrame extends DiffViewerCore {
       return lines.map((line) => fit(line, width))
     }
 
+    this.renderCache.replaceDocument(this.files)
+    const display = this.renderCache.selectedFileDisplay(this.selectedFileIndex)
     const viewport = renderDiffViewport({
       file,
+      displayRows: display?.rows,
       width,
       height,
       verticalOffset: this.diffScroll,

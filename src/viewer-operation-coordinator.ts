@@ -29,6 +29,7 @@ export type {
 export interface CoordinatorOptions {
   currentContext: () => { cwd: string; generation: number }
   onChange?: (snapshot: OperationSnapshot) => void
+  parentSignal?: AbortSignal
 }
 
 export class ViewerOperationCoordinator {
@@ -122,12 +123,18 @@ export class ViewerOperationCoordinator {
   ): ActiveOperation {
     const context = this.options.currentContext()
     const token: OperationToken = { id: this.nextOperationId++, cwd: context.cwd, generation: context.generation }
+    const controller = new AbortController()
+    const parentSignal = this.options.parentSignal
+    const abortFromParent = () => controller.abort(parentSignal?.reason)
+    if (parentSignal?.aborted) abortFromParent()
+    else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
     const active: ActiveOperation = {
       token,
       kind,
       phase,
-      controller: new AbortController(),
+      controller,
       cancelRequested: false,
+      disposeParentAbort: () => parentSignal?.removeEventListener("abort", abortFromParent),
     }
     this.active = active
     this.setSnapshot({ state: "running", label, summary, token, canRetryRefresh: this.pendingRefresh !== undefined })
@@ -151,6 +158,7 @@ export class ViewerOperationCoordinator {
     if (this.active !== active) {
       return
     }
+    active.disposeParentAbort?.()
     this.active = undefined
     this.setSnapshot(snapshot)
   }

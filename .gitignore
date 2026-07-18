@@ -1,5 +1,6 @@
 node_modules/
-dist/
-.tmp-tests/
-*.tgz
 .pi-subagents/
+.tmp-coverage/
+.tmp-tests/
+.tmp-typecheck/
+*.tgz

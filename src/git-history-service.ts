@@ -1,18 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, git, isUnbornHeadResult, requireGitRepository } from "./git-service.js"
+import { assertGitSuccess, isUnbornHeadResult, probeGit, requireGitRepository, runGit } from "./git-service.js"
 import { COMMIT_LIMIT, type CommitSummary } from "./types.js"
 
 export async function getCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<CommitSummary[]> {
   const root = await requireGitRepository(pi, cwd, signal)
   const args = ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"]
-  const result = await git(pi, root, args, signal)
-  if (isUnbornHeadResult(result)) {
-    return []
-  }
+  const result = await probeGit(pi, root, args, { signal })
+  if (isUnbornHeadResult(result)) return []
   assertGitSuccess(result, args, root)
-  if (!result.stdout.trim()) {
-    return []
-  }
+  if (!result.stdout.trim()) return []
   return result.stdout.split("\n").map((line) => {
     const [hash = "", ...messageParts] = line.split("\t")
     return { hash, message: messageParts.join("\t") }
@@ -28,19 +24,14 @@ export async function getCommitMessage(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["log", "-1", "--format=%s", hash]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
-  return result.stdout.trim()
+  return (await runGit(pi, root, ["log", "-1", "--format=%s", hash], { signal })).stdout.trim()
 }
 
 export async function getCommitCount(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<number> {
   const root = await requireGitRepository(pi, cwd, signal)
   const args = ["rev-list", "--count", "HEAD"]
-  const result = await git(pi, root, args, signal)
-  if (isUnbornHeadResult(result)) {
-    return 0
-  }
+  const result = await probeGit(pi, root, args, { signal })
+  if (isUnbornHeadResult(result)) return 0
   assertGitSuccess(result, args, root)
   const count = Number.parseInt(result.stdout.trim(), 10)
   if (!Number.isFinite(count)) {

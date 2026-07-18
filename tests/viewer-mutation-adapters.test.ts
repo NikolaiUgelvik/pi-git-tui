@@ -9,7 +9,7 @@ import { loadWorkingTreeDocument } from "../src/git-diff-service.js"
 import type { DiffFile, GitCommand, GitExecResult } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
-import { realGitPi, runGit } from "./helpers/real-git.js"
+import { realGitPi, runRealGit } from "./helpers/real-git.js"
 import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
@@ -172,15 +172,18 @@ function refreshFailingPi(
       }
       const custom = extra?.(args)
       if (custom) return custom
+      if (args[0] === "--literal-pathspecs" && args.includes("ls-files") && args.includes("--stage")) {
+        return gitResult()
+      }
       if (command === "diff --cached --quiet --") return gitResult("", 1)
-      return gitResult("", 97, `unexpected git ${command}`)
+      return workingSnapshotResult(args) ?? gitResult("", 97, `unexpected git ${command}`)
     },
   } as ExtensionAPI
   return { pi, mutationCalls: () => mutationCalls }
 }
 
 test("staging adapter preserves success and stores refresh-only recovery", async () => {
-  const fake = refreshFailingPi((args) => args.join(" ") === "add --all -- src/file.ts")
+  const fake = refreshFailingPi((args) => args.join(" ") === "--literal-pathspecs add --all -- src/file.ts")
   const diffViewer = viewer(fake.pi)
 
   await diffViewer.stageFile()
@@ -190,7 +193,7 @@ test("staging adapter preserves success and stores refresh-only recovery", async
 })
 
 test("unstaging adapter preserves success and stores refresh-only recovery", async () => {
-  const fake = refreshFailingPi((args) => args.join(" ") === "restore --staged -- src/file.ts")
+  const fake = refreshFailingPi((args) => args.join(" ") === "--literal-pathspecs restore --staged -- src/file.ts")
   const diffViewer = viewer(fake.pi)
 
   await diffViewer.unstageFile()
@@ -329,14 +332,14 @@ test("commit hook failure reconciles the reviewed index before reopening", async
 test("a failing pre-commit hook that stages a file refreshes the reviewed index", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-commit-hook-"))
   try {
-    runGit(root, ["init", "--quiet", "--initial-branch=main"])
-    runGit(root, ["config", "user.email", "tests@example.com"])
-    runGit(root, ["config", "user.name", "Tests"])
+    runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
+    runRealGit(root, ["config", "user.email", "tests@example.com"])
+    runRealGit(root, ["config", "user.name", "Tests"])
     await writeFile(join(root, "reviewed.txt"), "base\n")
-    runGit(root, ["add", "--all"])
-    runGit(root, ["commit", "--quiet", "-m", "initial"])
+    runRealGit(root, ["add", "--all"])
+    runRealGit(root, ["commit", "--quiet", "-m", "initial"])
     await writeFile(join(root, "reviewed.txt"), "reviewed change\n")
-    runGit(root, ["add", "reviewed.txt"])
+    runRealGit(root, ["add", "reviewed.txt"])
     const hook = join(root, ".git", "hooks", "pre-commit")
     await writeFile(
       hook,
@@ -356,7 +359,7 @@ test("a failing pre-commit hook that stages a file refreshes the reviewed index"
 
     await diffViewer.commit()
 
-    assert.equal(runGit(root, ["rev-list", "--count", "HEAD"]).trim(), "1")
+    assert.equal(runRealGit(root, ["rev-list", "--count", "HEAD"]).trim(), "1")
     assert.deepEqual(diffViewer.stagedPaths().sort(), ["hook-added.txt", "reviewed.txt"])
     assert.equal(diffViewer.operationState(), "failed")
     assert.equal(diffViewer.overlayStates()[4], "open")
@@ -567,14 +570,14 @@ test("Escape during a pending stash mutation reconciles once and never reopens t
 
 test("discard adapter closes its confirmation after success when refresh fails", async () => {
   const fake = refreshFailingPi(
-    (args) => args.join(" ") === "restore --source=HEAD --staged --worktree -- src/file.ts",
+    (args) => args.join(" ") === "--literal-pathspecs restore --source=HEAD --staged --worktree -- src/file.ts",
     (args) => {
       const command = args.join(" ")
       if (args.includes("ls-tree")) return gitResult("src/file.ts\0")
       if (args.includes("ls-files")) return gitResult()
       if (command === "rev-parse --verify HEAD") return gitResult("abcdef\n")
-      if (command === "diff --cached --quiet -- src/file.ts") return gitResult()
-      if (command === "diff --quiet -- src/file.ts") return gitResult()
+      if (command === "--literal-pathspecs diff --cached --quiet -- src/file.ts") return gitResult()
+      if (command === "--literal-pathspecs diff --quiet -- src/file.ts") return gitResult()
       return
     },
   )

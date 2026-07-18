@@ -12,6 +12,7 @@ export interface DiffViewportInput {
   verticalOffset: number
   horizontalOffset: number
   theme: Theme
+  displayRows?: readonly DiffDisplayRow[]
 }
 
 export interface DiffViewportResult {
@@ -45,7 +46,7 @@ function isNumberedRow(
   return row.type === "context" || row.type === "addition" || row.type === "deletion"
 }
 
-function gutterDigits(rows: DiffDisplayRow[]): number {
+function gutterDigits(rows: readonly DiffDisplayRow[]): number {
   return rows.reduce((width, row) => (isNumberedRow(row) ? Math.max(width, String(row.lineNumber).length) : width), 0)
 }
 
@@ -67,7 +68,7 @@ function rowContent(row: DiffDisplayRow, file: DiffFile): string {
   return row.text
 }
 
-function prepareRows(rows: DiffDisplayRow[], file: DiffFile): { rows: PreparedRow[]; gutterWidth: number } {
+function prepareRows(rows: readonly DiffDisplayRow[], file: DiffFile): { rows: PreparedRow[]; gutterWidth: number } {
   const digits = gutterDigits(rows)
   const gutterWidth = digits === 0 ? 0 : digits + 4
   return {
@@ -122,7 +123,7 @@ function scrollbarMarker(index: number, height: number, contentHeight: number, o
 export function renderDiffViewport(input: DiffViewportInput): DiffViewportResult {
   const width = whole(input.width)
   const height = whole(input.height)
-  const displayRows = formatDiffDisplay(input.file)
+  const displayRows = input.displayRows ?? formatDiffDisplay(input.file)
   const prepared = prepareRows(displayRows, input.file)
   const maxVerticalOffset = Math.max(0, prepared.rows.length - height)
   const verticalOffset = clamp(input.verticalOffset, maxVerticalOffset)

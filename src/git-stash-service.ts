@@ -1,20 +1,19 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, compactGitOutput, git, requireGitRepository } from "./git-service.js"
+import { compactGitOutput, requireGitRepository, runGit } from "./git-service.js"
 import type { StashSummary } from "./types.js"
 
 export async function stashCurrentChanges(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["stash", "push", "-u", "-m", "WIP from pi-git"]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
+  const result = await runGit(pi, root, ["stash", "push", "-u", "-m", "WIP from pi-git"], {
+    signal,
+    timeoutClass: "mutation",
+  })
   return compactGitOutput(result) || "Stashed current changes"
 }
 
 export async function getStashes(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<StashSummary[]> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["stash", "list", "--format=%gd%x00%s"]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
+  const result = await runGit(pi, root, ["stash", "list", "--format=%gd%x00%s"], { signal })
   return result.stdout
     .split("\n")
     .filter(Boolean)
@@ -26,21 +25,18 @@ export async function getStashes(pi: ExtensionAPI, cwd: string, signal?: AbortSi
 
 export async function applyStash(pi: ExtensionAPI, cwd: string, ref: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["stash", "apply", ref]
-  assertGitSuccess(await git(pi, root, args, signal), args, root)
+  await runGit(pi, root, ["stash", "apply", ref], { signal, timeoutClass: "mutation" })
   return `Applied ${ref}`
 }
 
 export async function popStash(pi: ExtensionAPI, cwd: string, ref: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["stash", "pop", ref]
-  assertGitSuccess(await git(pi, root, args, signal), args, root)
+  await runGit(pi, root, ["stash", "pop", ref], { signal, timeoutClass: "mutation" })
   return `Popped ${ref}`
 }
 
 export async function dropStash(pi: ExtensionAPI, cwd: string, ref: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["stash", "drop", ref]
-  assertGitSuccess(await git(pi, root, args, signal), args, root)
+  await runGit(pi, root, ["stash", "drop", ref], { signal, timeoutClass: "mutation" })
   return `Dropped ${ref}`
 }

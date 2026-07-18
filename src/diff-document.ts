@@ -1,4 +1,5 @@
 import { parseDiff } from "./diff-parser-core.js"
+import { textLineCount, utf8Bytes } from "./git-patch.js"
 import type {
   CommitDocument,
   CommitSummary,
@@ -11,6 +12,7 @@ import type {
   HeadState,
   RepositoryState,
   WorkingTreeDocument,
+  WorkingTreeRevision,
   WorkingTreeView,
 } from "./types.js"
 
@@ -21,8 +23,13 @@ export interface WorkingTreeDocumentInput {
   workingRaw: string
   untrackedPaths?: Iterable<string>
   conflictedPaths?: Iterable<string>
+  stagedOmittedFiles?: readonly DiffFile[]
+  workingOmittedFiles?: readonly DiffFile[]
+  stagedCapture?: { bytes: number; lines: number }
+  workingCapture?: { bytes: number; lines: number }
   repositoryState?: RepositoryState
   headState: HeadState
+  revision?: WorkingTreeRevision
 }
 
 export interface CommitDocumentInput {
@@ -31,6 +38,8 @@ export interface CommitDocumentInput {
   raw: string
   commit: CommitSummary
   headState?: HeadState
+  omittedFiles?: readonly DiffFile[]
+  capture?: { bytes: number; lines: number }
 }
 
 export function diffFileAliases(file: DiffFile | undefined): string[] {
@@ -86,8 +95,21 @@ function diffStats(files: DiffFile[]): DiffStats {
   return { files: files.length, ...countChangedLines(files) }
 }
 
-export function createDiffSlice(scope: DiffScope, raw: string, files: DiffFile[] = parseDiff(raw)): DiffSlice {
-  return { scope, raw, files, stats: diffStats(files) }
+export function createDiffSlice(
+  scope: DiffScope,
+  raw: string,
+  files: DiffFile[] = parseDiff(raw),
+  capture?: { bytes: number; lines: number },
+): DiffSlice {
+  return {
+    scope,
+    raw,
+    files,
+    stats: diffStats(files),
+    omittedFileCount: files.filter((file) => file.omission !== undefined).length,
+    capturedPatchBytes: capture?.bytes ?? utf8Bytes(raw),
+    capturedPatchLines: capture?.lines ?? textLineCount(raw),
+  }
 }
 
 function placeholderFile(path: string, options: { conflicted?: boolean; untracked?: boolean }): DiffFile {
@@ -147,15 +169,15 @@ function decoratedFile(
     newPath: mergedAlias(file.newPath, file.path, matchingFile?.newPath),
     status: conflicted ? "conflicted" : file.status,
     stageState: fileStageState(scope, matchingFile !== undefined, conflicted),
-    untracked: fileMatchesPaths(file, untrackedPaths) || undefined,
+    untracked: file.untracked || fileMatchesPaths(file, untrackedPaths) || undefined,
   }
 }
 
 export function buildWorkingTreeDocument(input: WorkingTreeDocumentInput): WorkingTreeDocument {
   const untrackedPaths = new Set(input.untrackedPaths)
   const conflictedPaths = new Set(input.conflictedPaths)
-  const stagedFiles = parseDiff(input.stagedRaw)
-  const workingFiles = parseDiff(input.workingRaw)
+  const stagedFiles = [...parseDiff(input.stagedRaw), ...(input.stagedOmittedFiles ?? [])]
+  const workingFiles = [...parseDiff(input.workingRaw), ...(input.workingOmittedFiles ?? [])]
   ensurePathFiles(workingFiles, untrackedPaths, { untracked: true })
   ensurePathFiles(workingFiles, conflictedPaths, { conflicted: true })
   ensurePathFiles(stagedFiles, conflictedPaths, { conflicted: true })
@@ -163,14 +185,24 @@ export function buildWorkingTreeDocument(input: WorkingTreeDocumentInput): Worki
   const working = workingFiles.map((file) =>
     decoratedFile(file, "working", stagedFiles, conflictedPaths, untrackedPaths),
   )
+  const stagedSlice = createDiffSlice("staged", input.stagedRaw, staged, input.stagedCapture)
+  const workingSlice = createDiffSlice("working", input.workingRaw, working, input.workingCapture)
+  const raw = [stagedSlice.raw, workingSlice.raw].filter(Boolean).join("\n")
+  const files = [...stagedSlice.files, ...workingSlice.files]
   return {
     mode: "working",
     title: input.title,
     subtitle: input.subtitle,
     repositoryState: input.repositoryState ?? "ready",
     headState: input.headState,
-    staged: createDiffSlice("staged", input.stagedRaw, staged),
-    working: createDiffSlice("working", input.workingRaw, working),
+    raw,
+    files,
+    omittedFileCount: stagedSlice.omittedFileCount + workingSlice.omittedFileCount,
+    capturedPatchBytes: stagedSlice.capturedPatchBytes + workingSlice.capturedPatchBytes,
+    capturedPatchLines: stagedSlice.capturedPatchLines + workingSlice.capturedPatchLines,
+    staged: stagedSlice,
+    working: workingSlice,
+    ...(input.revision === undefined ? {} : { revision: input.revision }),
   }
 }
 
@@ -184,14 +216,25 @@ export function emptyWorkingTreeDocument(
 }
 
 export function buildCommitDocument(input: CommitDocumentInput): CommitDocument {
+  const diff = createDiffSlice(
+    "commit",
+    input.raw,
+    [...parseDiff(input.raw), ...(input.omittedFiles ?? [])],
+    input.capture,
+  )
   return {
     mode: "commit",
     title: input.title,
     subtitle: input.subtitle,
     repositoryState: "ready",
     headState: input.headState ?? "present",
+    raw: diff.raw,
+    files: diff.files,
+    omittedFileCount: diff.omittedFileCount,
+    capturedPatchBytes: diff.capturedPatchBytes,
+    capturedPatchLines: diff.capturedPatchLines,
     commit: input.commit,
-    diff: createDiffSlice("commit", input.raw),
+    diff,
   }
 }
 

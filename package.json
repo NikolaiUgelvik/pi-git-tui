@@ -10,24 +10,52 @@
     "diff"
   ],
   "license": "MIT",
+  "main": "./dist/extensions/diff.js",
+  "types": "./dist/extensions/diff.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/extensions/diff.d.ts",
+      "import": "./dist/extensions/diff.js"
+    }
+  },
   "files": [
-    "extensions",
-    "src",
+    "dist",
     "README.md"
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./dist/extensions/diff.js"
     ]
   },
   "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "clean:dev": "node ./scripts/clean.mjs --tests --typecheck",
+    "build": "node ./scripts/build.mjs",
+    "verify:build": "node ./scripts/verify-build.mjs",
+    "dev": "pi -e ./extensions/diff.ts",
     "format": "biome check --write .",
     "lint": "biome check .",
-    "check": "biome ci . && npm run typecheck && npm test && npm run fallow",
-    "test": "sh -c 'rm -rf .tmp-tests && tsc --noEmit false --outDir .tmp-tests --rootDir . && node --test .tmp-tests/tests/*.test.js; status=$?; rm -rf .tmp-tests; exit $status'",
-    "fallow": "fallow --ci --fail-on-issues",
-    "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "lint:ci": "biome ci .",
+    "check": "node ./scripts/check.mjs",
+    "test": "node ./scripts/test.mjs --all",
+    "test:coverage": "node ./scripts/clean.mjs --coverage && c8 --reporter=json --reports-dir=.tmp-coverage node ./scripts/test.mjs --all && node ./scripts/sanitize-coverage.mjs",
+    "test:file": "node ./scripts/test.mjs --file",
+    "test:watch": "node ./scripts/test.mjs --watch",
+    "test:clean": "node ./scripts/clean.mjs --tests",
+    "smoke:package": "node ./tests/package-smoke.mjs",
+    "benchmark:git": "node benchmarks/git-pipeline.mjs",
+    "benchmark:render": "node benchmarks/render-caches.mjs",
+    "benchmark:load": "npm run build --silent && node benchmarks/extension-loading.mjs",
+    "benchmark:loop": "node benchmarks/developer-loop.mjs",
+    "benchmark:ci": "npm run benchmark:git -- --iterations 1 && npm run benchmark:render && npm run benchmark:load -- --iterations 20 --assert && npm run benchmark:loop -- --assert",
+    "fallow": "npm run fallow:dead-code && npm run fallow:audit",
+    "fallow:dead-code": "fallow dead-code --ci --fail-on-issues",
+    "fallow:audit": "fallow audit --gate new-only --coverage .tmp-coverage/coverage-final.json --ci",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "typecheck:watch": "tsc -p tsconfig.typecheck.json --watch",
+    "typecheck:clean": "node ./scripts/clean.mjs --typecheck",
+    "prepack": "npm run build && npm run verify:build",
+    "prepare": "node ./scripts/prepare.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
@@ -38,6 +66,7 @@
     "@earendil-works/pi-coding-agent": "^0.78.0",
     "@earendil-works/pi-tui": "^0.78.0",
     "@types/node": "^24.0.0",
+    "c8": "^12.0.0",
     "fallow": "^2.88.0",
     "husky": "^9.1.7",
     "typescript": "^5.9.0"

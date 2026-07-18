@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, git, requireGitRepository } from "./git-service.js"
-import type { ForcePushPreview, GitCommand, GitExecResult, PushPreviewUpdate } from "./types.js"
+import { assertGitSuccess, type GitCompletedResult, probeGit, requireGitRepository } from "./git-service.js"
+import type { ForcePushPreview, GitCommand, PushPreviewUpdate } from "./types.js"
 
 class ForcePushPreviewError extends Error {
   readonly details: string
@@ -16,7 +16,7 @@ export function redactPushDestination(destination: string): string {
   return destination.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/giu, "$1")
 }
 
-function redactedPushResult(result: GitExecResult): GitExecResult {
+function redactedPushResult(result: GitCompletedResult): GitCompletedResult {
   return {
     ...result,
     stdout: redactPushDestination(result.stdout),
@@ -24,7 +24,11 @@ function redactedPushResult(result: GitExecResult): GitExecResult {
   }
 }
 
-export function parseForcePushPreview(command: GitCommand, args: string[], result: GitExecResult): ForcePushPreview {
+export function parseForcePushPreview(
+  command: GitCommand,
+  args: string[],
+  result: GitCompletedResult,
+): ForcePushPreview {
   const safeResult = redactedPushResult(result)
   const lines = [safeResult.stdout, safeResult.stderr]
     .join("\n")
@@ -81,7 +85,7 @@ export async function previewForcePush(
   }
   const root = await requireGitRepository(pi, cwd, signal)
   const args = [...command.args, "--dry-run", "--porcelain"]
-  const result = redactedPushResult(await git(pi, root, args, signal))
+  const result = redactedPushResult(await probeGit(pi, root, args, { signal, timeoutClass: "network" }))
   assertGitSuccess(result, args, root)
   return parseForcePushPreview(command, args, result)
 }

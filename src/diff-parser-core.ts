@@ -1,37 +1,57 @@
+import { decodeGitQuotedPath } from "./git-path-quote.js"
 import type { DiffFile } from "./types.js"
-
-export type ParsedDiffFile = Omit<DiffFile, "stageState">
 
 function dropDiffSidePrefix(value: string): string {
   return value.startsWith("a/") || value.startsWith("b/") ? value.slice(2) : value
 }
 
-function parseQuotedGitPath(value: string): string {
-  if (!value.startsWith('"') || !value.endsWith('"')) {
-    return value
-  }
-  try {
-    return JSON.parse(value) as string
-  } catch {
-    return value.slice(1, -1)
-  }
-}
-
 function unquoteGitPath(path: string): string {
-  const value = dropDiffSidePrefix(path.trim())
-  return value === "/dev/null" ? value : parseQuotedGitPath(value)
+  const [encodedPath = path] = path.split("\t", 1)
+  const value = encodedPath.startsWith('"')
+    ? decodeGitQuotedPath(encodedPath)
+    : decodeGitQuotedPath(dropDiffSidePrefix(encodedPath))
+  return value === "/dev/null" ? value : dropDiffSidePrefix(value)
 }
 
 const DIFF_GIT_LINE = /^diff --git (.+) (.+)$/
-const DIFF_COMBINED_LINE = /^diff --(?:cc|combined) (.+)$/
 
-function pathFromDiffHeader(line: string): string | undefined {
-  const regularMatch = line.match(DIFF_GIT_LINE)
-  if (regularMatch) {
-    return unquoteGitPath(regularMatch[2] ?? regularMatch[1] ?? "")
+function quotedTokenEnd(value: string): number | undefined {
+  if (!value.startsWith('"')) return
+  for (let index = 1; index < value.length; index++) {
+    if (value[index] === "\\") {
+      index++
+    } else if (value[index] === '"') {
+      return index
+    }
   }
-  const combinedMatch = line.match(DIFF_COMBINED_LINE)
-  return combinedMatch ? unquoteGitPath(combinedMatch[1] ?? "") : undefined
+}
+
+function quotedDestination(body: string): string | undefined {
+  const firstEnd = quotedTokenEnd(body)
+  if (firstEnd === undefined) return
+  const remainder = body.slice(firstEnd + 1).trimStart()
+  const secondEnd = quotedTokenEnd(remainder)
+  if (secondEnd === undefined || remainder.slice(secondEnd + 1).trim()) return
+  return unquoteGitPath(remainder.slice(0, secondEnd + 1))
+}
+
+function samePathDestination(body: string): string | undefined {
+  let separator = body.indexOf(" b/")
+  while (separator >= 0) {
+    const oldPath = unquoteGitPath(body.slice(0, separator))
+    const destination = body.slice(separator + 1)
+    if (oldPath === unquoteGitPath(destination)) return unquoteGitPath(destination)
+    separator = body.indexOf(" b/", separator + 1)
+  }
+}
+
+function pathFromDiffGit(line: string): string | undefined {
+  if (!line.startsWith("diff --git ")) return
+  const body = line.slice("diff --git ".length)
+  const precise = quotedDestination(body) ?? samePathDestination(body)
+  if (precise) return precise
+  const match = line.match(DIFF_GIT_LINE)
+  return match ? unquoteGitPath(match[2] ?? match[1] ?? "") : undefined
 }
 
 function lineHasAnyPrefix(line: string, prefixes: string[]): boolean {
@@ -42,6 +62,8 @@ const STATUS_LINE_RULES: Array<{ status: DiffFile["status"]; matches: (line: str
   { status: "binary", matches: (line) => lineHasAnyPrefix(line, ["Binary files ", "GIT binary patch"]) },
   { status: "renamed", matches: (line) => line.startsWith("rename from ") },
   { status: "copied", matches: (line) => line.startsWith("copy from ") },
+  { status: "added", matches: (line) => line.startsWith("new file mode ") },
+  { status: "deleted", matches: (line) => line.startsWith("deleted file mode ") },
 ]
 
 function statusFromPaths(oldPath?: string, newPath?: string): DiffFile["status"] {
@@ -76,7 +98,7 @@ interface DiffChunkState {
 }
 
 function startsNewDiffChunk(state: DiffChunkState, line: string): boolean {
-  return state.current.length > 0 && /^diff --(?:git|cc|combined) /u.test(line)
+  return state.current.length > 0 && line.startsWith("diff --git ")
 }
 
 function flushCurrentChunk(state: DiffChunkState): void {
@@ -109,12 +131,12 @@ interface MetadataLineRule {
 }
 
 const METADATA_LINE_RULES: MetadataLineRule[] = [
-  ...["diff --git ", "diff --cc ", "diff --combined "].map((prefix) => ({
-    prefix,
-    apply: (metadata: DiffMetadata, line: string) => {
-      metadata.fallbackPath = pathFromDiffHeader(line) ?? metadata.fallbackPath
+  {
+    prefix: "diff --git ",
+    apply: (metadata, line) => {
+      metadata.fallbackPath = pathFromDiffGit(line) ?? metadata.fallbackPath
     },
-  })),
+  },
   {
     prefix: "--- ",
     apply: (metadata, line) => {
@@ -161,18 +183,18 @@ function displayPath(metadata: DiffMetadata): string {
   return usablePath(metadata.newPath) ?? usablePath(metadata.oldPath) ?? metadata.fallbackPath ?? "(unknown)"
 }
 
-function diffFileFromChunk(lines: string[]): ParsedDiffFile {
+function diffFileFromChunk(lines: string[]): DiffFile {
   const metadata = extractDiffMetadata(lines)
-  const combined = lines[0]?.startsWith("diff --cc ") || lines[0]?.startsWith("diff --combined ")
   return {
     path: displayPath(metadata),
     oldPath: metadata.oldPath,
     newPath: metadata.newPath,
-    status: combined ? "conflicted" : statusFromLines(lines, metadata.oldPath, metadata.newPath),
+    status: statusFromLines(lines, metadata.oldPath, metadata.newPath),
+    staged: false,
     lines,
   }
 }
 
-export function parseDiff(raw: string): ParsedDiffFile[] {
+export function parseDiff(raw: string): DiffFile[] {
   return diffChunks(normalizedDiffLines(raw)).map(diffFileFromChunk)
 }

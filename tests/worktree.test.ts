@@ -9,7 +9,7 @@ import { listWorktrees, parseWorktreeList } from "../src/git-extras.js"
 import type { GitExecResult } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { HELP_ACTIONS } from "../src/viewer-help.js"
-import { workingDocument } from "./helpers/viewer.js"
+import { workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecCall = { cmd: string; args: string[]; cwd: string | undefined }
 
@@ -66,8 +66,12 @@ function createWorktreeSwitchPi(calls: ExecCall[]): ExtensionAPI {
   return createPi((args, cwd) => {
     calls.push({ cmd: "git", args, cwd })
     const command = args.join(" ")
-    const response = responses.get(command) ?? (args.includes("diff") ? () => gitResult("") : undefined)
-    return response?.(cwd) ?? gitResult("", 1, `unexpected git ${command}`)
+    const response = responses.get(command)
+    return (
+      response?.(cwd) ??
+      workingSnapshotResult(args, cwd, { branch: "feature-abc", head: "1234567" }) ??
+      gitResult("", 1, `unexpected git ${command}`)
+    )
   })
 }
 

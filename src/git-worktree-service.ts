@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { assertGitSuccess, git, requireGitRepository } from "./git-service.js"
+import { probeGit, requireGitRepository, runGit } from "./git-service.js"
 import type { WorktreeSummary } from "./types.js"
 
 function worktreeBranchName(ref: string): string {
@@ -16,17 +16,11 @@ export function parseWorktreeList(output: string): WorktreeSummary[] {
       for (const line of record.split("\n")) {
         const [key = "", ...valueParts] = line.split(" ")
         const value = valueParts.join(" ")
-        if (key === "worktree") {
-          worktree.path = value
-        } else if (key === "HEAD") {
-          worktree.head = value
-        } else if (key === "branch") {
-          worktree.branch = worktreeBranchName(value)
-        } else if (key === "detached") {
-          worktree.detached = true
-        } else if (key === "bare") {
-          worktree.bare = true
-        }
+        if (key === "worktree") worktree.path = value
+        else if (key === "HEAD") worktree.head = value
+        else if (key === "branch") worktree.branch = worktreeBranchName(value)
+        else if (key === "detached") worktree.detached = true
+        else if (key === "bare") worktree.bare = true
       }
       return worktree
     })
@@ -35,9 +29,7 @@ export function parseWorktreeList(output: string): WorktreeSummary[] {
 
 export async function getWorktrees(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<WorktreeSummary[]> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["worktree", "list", "--porcelain"]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
+  const result = await runGit(pi, root, ["worktree", "list", "--porcelain"], { signal })
   return parseWorktreeList(result.stdout)
 }
 
@@ -52,11 +44,9 @@ export async function switchWorktree(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const args = ["worktree", "add", "-f", path, "--detach"]
-  const result = await git(pi, root, args, signal)
-  if (result.code === 0) {
-    return `Created worktree at ${path}`
-  }
-  // Worktree may already exist; just return the path
-  return `Switched to worktree at ${path}`
+  const result = await probeGit(pi, root, ["worktree", "add", "-f", path, "--detach"], {
+    signal,
+    timeoutClass: "mutation",
+  })
+  return result.code === 0 ? `Created worktree at ${path}` : `Switched to worktree at ${path}`
 }

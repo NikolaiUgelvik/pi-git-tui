@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { contextForDocumentLoad, loadDiffDocument } from "./diff-document-loader.js"
 import { type FailureDetails, failureDetails } from "./failure-details.js"
-import type { DiffDocument, DiffFile, DiffSlice, WorkingTreeView } from "./types.js"
+import { refreshWorkingTreeDocument } from "./git-working-tree-refresh.js"
+import type { DiffDocument, DiffFile, DiffSlice, WorkingTreeRefreshScope, WorkingTreeView } from "./types.js"
 import { type ViewerAction, viewerActionAvailability } from "./viewer-action-policy.js"
 import {
   type DiffLoadRequest,
@@ -60,6 +61,7 @@ export class DiffViewerOperationBase {
     this.operationCoordinator = new ViewerOperationCoordinator({
       currentContext: () => ({ cwd: this.activePath(), generation: this.documentState.generation }),
       onChange: () => this.requestRender(),
+      parentSignal: ctx.signal,
     })
   }
 
@@ -206,8 +208,23 @@ export class DiffViewerOperationBase {
   protected workingTreeRefreshIntent(
     cwd = this.activePath(),
     selection: DocumentSelection = this.documentState.captureSelection(),
+    scope: WorkingTreeRefreshScope = "full",
   ): RefreshIntent<DiffDocument> {
-    return this.documentRefreshIntent({ kind: "working", cwd }, selection)
+    if (scope === "full" || this.document.mode !== "working") {
+      return this.documentRefreshIntent({ kind: "working", cwd }, selection)
+    }
+    const current = this.document
+    const request = { kind: "working" as const, cwd }
+    return {
+      label: "diff refresh",
+      selection,
+      run: async ({ signal }) =>
+        (await refreshWorkingTreeDocument(this.pi, this.activeContext(signal), current, scope)).document,
+      apply: (document) => {
+        if (document.mode === "working" && document.files === current.files) this.documentState.updateMetadata(document)
+        else this.documentState.replaceDocument(request, document, selection)
+      },
+    }
   }
 
   protected async loadDocument(

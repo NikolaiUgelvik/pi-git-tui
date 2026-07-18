@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent"
 import { stagedDiffForCommitMessage } from "./git-index-service.js"
-import { assertGitExitCode, assertGitSuccess, compactGitOutput, ensureGitRepository, git } from "./git-service.js"
+import { compactGitOutput, ensureGitRepository, runGit } from "./git-service.js"
 import { COMMIT_MESSAGE_TIMEOUT_MS } from "./types.js"
 
 interface AssistantTextMessage {
@@ -289,15 +289,13 @@ export async function runGitCommit(
     throw new Error("Not a git repository")
   }
   if (!amend) {
-    const stagedArgs = ["diff", "--cached", "--quiet", "--"]
-    const stagedResult = await git(pi, root, stagedArgs, signal)
-    assertGitExitCode(stagedResult, stagedArgs, [0, 1], root)
-    if (stagedResult.code === 0) {
-      throw new Error("No staged changes to commit")
-    }
+    const stagedResult = await runGit(pi, root, ["diff", "--cached", "--quiet", "--"], {
+      signal,
+      acceptedExitCodes: [0, 1],
+    })
+    if (stagedResult.code === 0) throw new Error("No staged changes to commit")
   }
   const args = amend ? ["commit", "--amend", "-m", message] : ["commit", "-m", message]
-  const result = await git(pi, root, args, signal)
-  assertGitSuccess(result, args, root)
+  const result = await runGit(pi, root, args, { signal, timeoutClass: "mutation" })
   return compactGitOutput(result) || "Commit complete"
 }

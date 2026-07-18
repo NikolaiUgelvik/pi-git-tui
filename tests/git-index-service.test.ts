@@ -6,15 +6,15 @@ import { test } from "node:test"
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { loadWorkingTreeDocument } from "../src/git-diff-service.js"
 import { stageAllRemaining, stageRemainingFile, unstageAll, unstageFile } from "../src/git-index-service.js"
-import { realGitPi, runGit } from "./helpers/real-git.js"
+import { realGitPi, runRealGit } from "./helpers/real-git.js"
 
 async function initializeRepository(root: string): Promise<void> {
-  runGit(root, ["init", "--quiet", "--initial-branch=main"])
-  runGit(root, ["config", "user.email", "tests@example.com"])
-  runGit(root, ["config", "user.name", "Tests"])
+  runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
+  runRealGit(root, ["config", "user.email", "tests@example.com"])
+  runRealGit(root, ["config", "user.name", "Tests"])
   await writeFile(join(root, "file.txt"), "base one\nbase two\n")
-  runGit(root, ["add", "--all"])
-  runGit(root, ["commit", "--quiet", "-m", "initial"])
+  runRealGit(root, ["add", "--all"])
+  runRealGit(root, ["commit", "--quiet", "-m", "initial"])
 }
 
 test("staging a mixed file stages the remaining content instead of unstaging it", async () => {
@@ -22,13 +22,13 @@ test("staging a mixed file stages the remaining content instead of unstaging it"
   try {
     await initializeRepository(root)
     await writeFile(join(root, "file.txt"), "staged one\nbase two\n")
-    runGit(root, ["add", "file.txt"])
+    runRealGit(root, ["add", "file.txt"])
     await writeFile(join(root, "file.txt"), "staged one\nworking two\n")
 
     await stageRemainingFile(realGitPi(), root, "file.txt")
 
-    assert.equal(runGit(root, ["diff", "--", "file.txt"]), "")
-    const staged = runGit(root, ["diff", "--cached", "--", "file.txt"])
+    assert.equal(runRealGit(root, ["diff", "--", "file.txt"]), "")
+    const staged = runRealGit(root, ["diff", "--cached", "--", "file.txt"])
     assert.match(staged, /\+staged one/u)
     assert.match(staged, /\+working two/u)
     const stagedDocument = await loadWorkingTreeDocument(realGitPi(), { cwd: root } as ExtensionContext)
@@ -49,13 +49,13 @@ test("explicit unstage preserves working-tree edits", async () => {
   try {
     await initializeRepository(root)
     await writeFile(join(root, "file.txt"), "changed\n")
-    runGit(root, ["add", "file.txt"])
+    runRealGit(root, ["add", "file.txt"])
 
     await unstageFile(realGitPi(), root, "file.txt")
 
-    assert.equal(runGit(root, ["diff", "--cached", "--", "file.txt"]), "")
+    assert.equal(runRealGit(root, ["diff", "--cached", "--", "file.txt"]), "")
     assert.equal(await readFile(join(root, "file.txt"), "utf8"), "changed\n")
-    assert.match(runGit(root, ["diff", "--", "file.txt"]), /\+changed/u)
+    assert.match(runRealGit(root, ["diff", "--", "file.txt"]), /\+changed/u)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -64,14 +64,14 @@ test("explicit unstage preserves working-tree edits", async () => {
 test("unborn-HEAD unstage fallback preserves newer working content", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-unstage-unborn-"))
   try {
-    runGit(root, ["init", "--quiet", "--initial-branch=main"])
+    runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "first.txt"), "staged\n")
-    runGit(root, ["add", "first.txt"])
+    runRealGit(root, ["add", "first.txt"])
     await writeFile(join(root, "first.txt"), "working\n")
 
     await unstageFile(realGitPi(), root, "first.txt")
 
-    assert.equal(runGit(root, ["ls-files", "--stage", "--", "first.txt"]), "")
+    assert.equal(runRealGit(root, ["ls-files", "--stage", "--", "first.txt"]), "")
     assert.equal(await readFile(join(root, "first.txt"), "utf8"), "working\n")
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -81,15 +81,15 @@ test("unborn-HEAD unstage fallback preserves newer working content", async () =>
 test("stage-all and unstage-all are deterministic in an unborn repository", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-index-all-"))
   try {
-    runGit(root, ["init", "--quiet", "--initial-branch=main"])
+    runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "one.txt"), "one\n")
     await writeFile(join(root, "two.txt"), "two\n")
 
     await stageAllRemaining(realGitPi(), root)
-    assert.deepEqual(runGit(root, ["ls-files"]).trim().split("\n"), ["one.txt", "two.txt"])
+    assert.deepEqual(runRealGit(root, ["ls-files"]).trim().split("\n"), ["one.txt", "two.txt"])
 
     await unstageAll(realGitPi(), root)
-    assert.equal(runGit(root, ["ls-files"]), "")
+    assert.equal(runRealGit(root, ["ls-files"]), "")
     assert.equal(await readFile(join(root, "one.txt"), "utf8"), "one\n")
     assert.equal(await readFile(join(root, "two.txt"), "utf8"), "two\n")
   } finally {
@@ -103,18 +103,18 @@ test("rename aliases stage and unstage the full logical rename", async () => {
     await initializeRepository(root)
     await rename(join(root, "file.txt"), join(root, "renamed.txt"))
     await writeFile(join(root, "renamed.txt"), "renamed content\n")
-    runGit(root, ["add", "-N", "renamed.txt"])
+    runRealGit(root, ["add", "-N", "renamed.txt"])
 
     await stageRemainingFile(realGitPi(), root, ["renamed.txt", "file.txt"])
-    assert.equal(runGit(root, ["diff", "--", "file.txt", "renamed.txt"]), "")
-    assert.deepEqual(runGit(root, ["diff", "--cached", "--name-only"]).trim().split("\n").sort(), [
+    assert.equal(runRealGit(root, ["diff", "--", "file.txt", "renamed.txt"]), "")
+    assert.deepEqual(runRealGit(root, ["diff", "--cached", "--name-only"]).trim().split("\n").sort(), [
       "file.txt",
       "renamed.txt",
     ])
 
     await unstageFile(realGitPi(), root, ["file.txt", "renamed.txt"])
-    assert.equal(runGit(root, ["diff", "--cached", "--name-status"]), "")
-    assert.match(runGit(root, ["status", "--short"]), / D file\.txt[\s\S]*\?\? renamed\.txt/u)
+    assert.equal(runRealGit(root, ["diff", "--cached", "--name-status"]), "")
+    assert.match(runRealGit(root, ["status", "--short"]), / D file\.txt[\s\S]*\?\? renamed\.txt/u)
   } finally {
     await rm(root, { recursive: true, force: true })
   }

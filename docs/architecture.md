@@ -27,9 +27,11 @@ The viewer keeps rendering and overlay controllers separate from repository obse
 - accept exit code `1` only for `git diff --no-index`, where it means differences were found;
 - preserve full command, cwd, stdout, and stderr details in `GitCommandError`.
 
-`src/untracked-preview-service.ts` bounds untracked augmentation independently from snapshot orchestration. It batch-checks all discovered paths against the index and HEAD before applying preview budgets, then uses an order-preserving worker pool with at most four active filesystem or patch reads. It previews at most 100 files and 1 MiB in aggregate and retains budget-exhausted, oversized, and non-regular paths as stageable placeholders. `lstat()` keeps symlinks—including broken links—eligible as symlink patches instead of following or dropping their targets; only expected disappearance races (`ENOENT` and `ENOTDIR`) are omitted, while other filesystem failures reject the complete snapshot. Patches are admitted atomically rather than truncated, so binary detection and per-file diff parsing remain Git-owned. Missing or newly tracked paths are still omitted, and unexpected or killed Git results still reject the complete snapshot.
+`src/git-status.ts` parses one strict, NUL-delimited porcelain-v2 snapshot as the authority for branch/upstream metadata, staged and working state, conflicts, renames, submodules, untracked paths, and refresh fingerprints. Tracked capture applies file, aggregate-byte, retained-patch, line, and argument budgets independently to the staged and working slices. `src/git-untracked-service.ts` batch-checks index membership, uses an order-preserving four-worker pool, and applies the same explicit omission model. Oversized, unsupported, changed, and budget-exhausted paths remain visible as stageable omission placeholders; patches are admitted only as complete Git records and never truncated at arbitrary bytes.
 
-`src/diff-document.ts` parses and decorates both slices, matches logical files through `path`, `oldPath`, and `newPath` aliases, derives `staged`, `unstaged`, `mixed`, and `conflicted` state, and computes file/addition/deletion totals. Historical documents expose one commit slice. `src/diff-document-loader.ts` routes a `DiffLoadRequest` to working-tree or historical loading without callers rebuilding contexts.
+`src/git-service.ts` rejects pre-aborted work before spawning, centralizes local, mutation, and network timeout classes, and turns cancellation, timeout, and unexpected exits into typed failures. Killed output is never accepted as a document. Status-only command refreshes reuse both slice identities only when the status fingerprint and index/worktree content identity remain unchanged; otherwise they escalate to a complete dual-slice load.
+
+`src/diff-document.ts` parses and decorates both slices, matches logical files through `path`, `oldPath`, and `newPath` aliases, derives `staged`, `unstaged`, `mixed`, and `conflicted` state, and computes file/addition/deletion plus capture/omission totals. Historical documents expose one commit slice; bounded historical and commit-prompt capture utilities retain complete records and explicit omissions. `src/diff-document-loader.ts` routes a `DiffLoadRequest` to working-tree or historical loading without callers rebuilding contexts.
 
 A missing repository is a valid loaded document with `repositoryState: "missing"`. A clean repository is a valid loaded document with no files. A snapshot failure is separate state that retains the last complete document and a retryable request.
 
@@ -107,7 +109,10 @@ After a successful stash mutation, a failed `stash list` refresh:
 
 The stash mutation is never retained for retry.
 
-## Responsive rendering and diff viewports
+## Rendering caches and responsive diff viewports
+
+`ViewerRenderCache` retains one document/view generation of tree rows and selected-file display rows under explicit row and byte caps. Switching document identity or staged/working slices invalidates it; repeated scrolling and navigation reuse immutable derivations. `FilterableListState` similarly retains one immutable filtered snapshot keyed by item version and the grapheme-aware search field value.
+
 
 `src/responsive-geometry.ts` is the single source of truth for frame and overlay bounds. The frame is always at most `terminalRows - 2` rows and exactly the supplied render width. Widths below 72 columns show only the focused Files or Diff panel, with Tab switching the visible panel; wider frames use the split layout. Clean, missing, and startup-failure documents use one full-width summary panel. Short frames remove decorative chrome before functional rows, and dimensions below the usable minimum render a bounded resize instruction.
 
@@ -117,11 +122,12 @@ All overlay controllers use `src/overlay-frame.ts`, while `viewer-overlay-base.t
 
 ## Module groups
 
-- **Execution and snapshots**: `git-service.ts`, `git-diff-service.ts`, `untracked-preview-service.ts`, `diff-document.ts`, `diff-document-loader.ts`, `git-file-list-service.ts`, `git-status.ts`, and focused Git domain services.
+- **Execution and snapshots**: `git-service.ts`, `git-status.ts`, `git-diff-service.ts`, `git-diff-capture.ts`, `git-untracked-service.ts`, `diff-document.ts`, `diff-document-loader.ts`, and focused Git domain services.
 - **Document and operation state**: `viewer-document-state.ts`, `viewer-operation-types.ts`, `viewer-operation-coordinator.ts`, and `viewer-operation-base.ts`.
 - **Viewer/frame**: `viewer.ts`, `viewer-core.ts`, `viewer-navigation-base.ts`, `viewer-frame.ts`, `viewer-overlay-coordinator.ts`, `responsive-geometry.ts`, `diff-viewport.ts`, `help-overlay-state.ts`, and overlay-specific viewer adapters.
 - **Overlay controllers**: commit, command, branch, stash, and worktree controllers own local filtering, selection, and rendering state; `overlay-frame.ts` provides their shared bounded chrome.
-- **Parser/display**: diff parser, tree, structured diff display, and ANSI terminal-column modules.
+- **Parser/display**: diff parser, tree, structured diff display, render-cache, and ANSI terminal-column modules.
+- **Build/package**: production ESM is emitted to `dist/`; a hashed manifest, reproducible-build verifier, and packed-package smoke test prevent stale compiled installs. Source development remains available through `npm run dev`.
 
 ## Testing strategy
 
@@ -143,4 +149,7 @@ Focused suites cover:
 - startup/manual reload, selection preservation, neutral loading, and full failure details;
 - width/height matrices for split, single-panel, empty, compact overlay, and scrollable-help layouts;
 - horizontal diff offsets with fixed gutters, ANSI, tabs, combining text, CJK, emoji, and resize clamping;
-- 1,000-path untracked preview fan-out, deterministic ordering, aggregate budgets, abort behavior, race checks, binary files, large files, missing paths, directories, and symlinks.
+- large untracked fan-out, deterministic ordering, process ceilings, aggregate budgets, abort behavior, race checks, binary files, large files, missing paths, directories, and symlinks;
+- porcelain-v2 equivalence for initial, detached, renamed, conflicted, submodule, linked-worktree, and unusual-path repositories;
+- status/full command refresh escalation and cache invalidation across staged/working views;
+- reproducible compiled output, packed installation, startup loading, and clean versus incremental developer-loop checks.

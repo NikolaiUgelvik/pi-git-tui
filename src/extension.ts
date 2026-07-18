@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import type { KeyId } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDocument } from "./git.js"
+import { isGitAbortError } from "./git-service.js"
 import { DiffViewer } from "./viewer.js"
 import { failedViewerDocument, loadedViewerDocument, type ViewerInitialDocument } from "./viewer-document-state.js"
 
@@ -16,11 +17,14 @@ export async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): P
     return
   }
 
+  if (ctx.signal?.aborted) return
+
   const request = { kind: "working" as const, cwd: ctx.cwd }
   let initialDocument: ViewerInitialDocument
   try {
     initialDocument = loadedViewerDocument(await loadWorkingTreeDocument(pi, ctx), request)
   } catch (error) {
+    if (isGitAbortError(error) || ctx.signal?.aborted) return
     initialDocument = failedViewerDocument(request, error)
   }
 
