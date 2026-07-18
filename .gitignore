@@ -2,3 +2,4 @@ node_modules/
 dist/
 .tmp-tests/
 *.tgz
+.pi-subagents/
