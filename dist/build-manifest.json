@@ -104,8 +104,8 @@
     },
     {
       "path": "src/commit-message-service.ts",
-      "bytes": 9863,
-      "sha256": "0a02d173484c4ff1d5df9be89c418d8d3083645157afb44858e57cb99414de93"
+      "bytes": 9322,
+      "sha256": "23926da028e709690858fe5d74540628c659848e431d425b3971ab7cf21ba7fd"
     },
     {
       "path": "src/commit-picker-controller.ts",
@@ -631,18 +631,18 @@
     },
     {
       "path": "dist/src/commit-message-service.d.ts",
-      "bytes": 817,
-      "sha256": "fb9d1db092a4ff5853dbd95d1cfe7b482bbc370de3118257ddc0ad159e7a326b"
+      "bytes": 978,
+      "sha256": "d1929e2f929585888d04e780745a6288f894becc4582072822da869d1bc6eea0"
     },
     {
       "path": "dist/src/commit-message-service.js",
-      "bytes": 8661,
-      "sha256": "4913bdfb3da66e94f06b7f61b93ce03443cfd52c4f1542c1198f811bd7350425"
+      "bytes": 8090,
+      "sha256": "56a017af684aa7e22920a4a5802c5c220a1b3fe0fce84143751f7731d71556db"
     },
     {
       "path": "dist/src/commit-message-service.js.map",
-      "bytes": 18639,
-      "sha256": "d727a8e265b6c4a85c8378fdd8faa58df4590409ab97e9e35725f7384c8b72e5"
+      "bytes": 17574,
+      "sha256": "28a1c62211f4489c5f511e436b8857f42f8b31f15d580c003cfff8ac36770401"
     },
     {
       "path": "dist/src/commit-picker-controller.d.ts",

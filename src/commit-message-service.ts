@@ -57,18 +57,8 @@ function cleanGeneratedCommitMessage(text: string): string {
     .trim()
 }
 
-function createBackgroundSessionManager(ctx: ExtensionContext): SessionManager {
-  const sessionFile = ctx.sessionManager.getSessionFile()
-  const leafId = ctx.sessionManager.getLeafId()
-  if (!sessionFile || !leafId) {
-    throw new Error("Cannot fork the active session for commit message generation")
-  }
-  const sourceSession = SessionManager.open(sessionFile, ctx.sessionManager.getSessionDir(), ctx.cwd)
-  const forkedSessionFile = sourceSession.createBranchedSession(leafId)
-  if (!forkedSessionFile) {
-    throw new Error("Could not create background session fork")
-  }
-  return SessionManager.open(forkedSessionFile, ctx.sessionManager.getSessionDir(), ctx.cwd)
+export function createBackgroundSessionManager(ctx: ExtensionContext): SessionManager {
+  return SessionManager.inMemory(ctx.cwd)
 }
 
 function lastAssistantTextMessage(messages: unknown[]): AssistantTextMessage | undefined {

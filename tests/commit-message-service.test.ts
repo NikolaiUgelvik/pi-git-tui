@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { generateCommitMessage } from "../src/commit-message-service.js"
+import { createBackgroundSessionManager, generateCommitMessage } from "../src/commit-message-service.js"
 import { deferred, flushPromises } from "./helpers/deferred.js"
 
 interface FakeSession {
@@ -46,6 +49,36 @@ function trackedSession(events: string[], options: FakeSessionOptions = {}): Fak
       }),
   }
 }
+
+test("background session creation tolerates an active leaf missing from the persisted session", async () => {
+  const sessionDirectory = await mkdtemp(join(tmpdir(), "pi-git-stale-session-"))
+  const sessionFile = join(sessionDirectory, "active.jsonl")
+  const header = {
+    type: "session",
+    version: 3,
+    id: "active-session",
+    timestamp: "2026-01-01T00:00:00.000Z",
+    cwd: "/repo",
+  }
+  await writeFile(sessionFile, `${JSON.stringify(header)}\n`)
+
+  const staleContext = {
+    cwd: "/repo",
+    sessionManager: {
+      getLeafId: () => "a9ef319d",
+      getSessionDir: () => sessionDirectory,
+      getSessionFile: () => sessionFile,
+    },
+  } as unknown as ExtensionContext
+
+  try {
+    const sessionManager = createBackgroundSessionManager(staleContext)
+    assert.equal(sessionManager.isPersisted(), false)
+    assert.equal(sessionManager.getCwd(), "/repo")
+  } finally {
+    await rm(sessionDirectory, { recursive: true, force: true })
+  }
+})
 
 function pendingSessionGeneration(controller: AbortController) {
   const sessionTask = deferred<FakeSession>()
