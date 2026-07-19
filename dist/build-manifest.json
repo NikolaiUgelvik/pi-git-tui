@@ -379,8 +379,8 @@
     },
     {
       "path": "src/types.ts",
-      "bytes": 5484,
-      "sha256": "9acfd0139ad5b8954bdac342afd725f99da3123bb89b017b20bcd4f5b14526b8"
+      "bytes": 6777,
+      "sha256": "414abd498b6cd11339e5c5555187a3b2e757342bce484d814e5e2f45d80c9ecc"
     },
     {
       "path": "src/viewer-action-policy.ts",
@@ -1461,13 +1461,13 @@
     },
     {
       "path": "dist/src/types.js",
-      "bytes": 1690,
-      "sha256": "ce85f4547b16e430559a6eae43c873ace48d2ef9bc4b2d36f95b3ac98b08d93a"
+      "bytes": 3123,
+      "sha256": "4732f13e9d0226c28e0cf19e2db8c5f14f92911834e2d15e0db4bb285d5d181e"
     },
     {
       "path": "dist/src/types.js.map",
-      "bytes": 7495,
-      "sha256": "c0d686c917a82c8ba21284dab84b28cf83ecbc0f33140492a9c8bf993f911b80"
+      "bytes": 10030,
+      "sha256": "c24e43f3ab200a1a94cb69b4c513e5157c5a9e91ba8094c2c9505251f64e9bbb"
     },
     {
       "path": "dist/src/viewer-action-policy.d.ts",

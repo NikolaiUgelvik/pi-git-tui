@@ -213,9 +213,14 @@ test("status refresh cancellation is terminal and starts no full-load process", 
 test("configured command refresh scopes distinguish ref-only and content-changing commands", () => {
   assert.deepEqual(Object.fromEntries(GIT_COMMANDS.map((command) => [command.label, command.refresh])), {
     Fetch: { success: "status", failure: "status" },
+    "Fetch + Prune": { success: "status", failure: "status" },
+    "Fetch All Remotes": { success: "status", failure: "status" },
+    "Pull (FF Only)": { success: "full", failure: "full" },
     Pull: { success: "full", failure: "full" },
     "Pull (Rebase)": { success: "full", failure: "full" },
+    "Update Submodules": { success: "full", failure: "full" },
     Push: { success: "status", failure: "status" },
+    "Push Tags": { success: "status", failure: "status" },
     "Force Push": { success: "status", failure: "status" },
   })
 })

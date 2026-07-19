@@ -59,6 +59,74 @@ const forcePushPreview: ForcePushPreview = {
   ],
 }
 
+const addedCommandLabels = new Set([
+  "Fetch + Prune",
+  "Fetch All Remotes",
+  "Pull (FF Only)",
+  "Update Submodules",
+  "Push Tags",
+])
+
+// --- Command catalog ---
+
+test("command catalog includes the additions in related menu groups", () => {
+  assert.deepEqual(
+    GIT_COMMANDS.map((command) => command.label),
+    [
+      "Fetch",
+      "Fetch + Prune",
+      "Fetch All Remotes",
+      "Pull (FF Only)",
+      "Pull",
+      "Pull (Rebase)",
+      "Update Submodules",
+      "Push",
+      "Push Tags",
+      "Force Push",
+    ],
+  )
+  assert.deepEqual(
+    GIT_COMMANDS.filter((command) => addedCommandLabels.has(command.label)).map((command) => ({
+      label: command.label,
+      args: command.args,
+      risk: command.risk,
+      refreshDiff: command.refreshDiff,
+    })),
+    [
+      {
+        label: "Fetch + Prune",
+        args: ["fetch", "--prune"],
+        risk: { kind: "normal" },
+        refreshDiff: true,
+      },
+      {
+        label: "Fetch All Remotes",
+        args: ["fetch", "--all", "--prune"],
+        risk: { kind: "normal" },
+        refreshDiff: true,
+      },
+      {
+        label: "Pull (FF Only)",
+        args: ["pull", "--ff-only"],
+        risk: { kind: "normal" },
+        refreshDiff: true,
+      },
+      {
+        label: "Update Submodules",
+        args: ["submodule", "update", "--init", "--recursive"],
+        risk: { kind: "normal" },
+        refreshDiff: true,
+      },
+      {
+        label: "Push Tags",
+        args: ["push", "--tags"],
+        risk: { kind: "normal" },
+        refreshDiff: true,
+      },
+    ],
+  )
+})
+
 // --- Opening the menu ---
 
 test("opening the menu sets state to open", () => {
@@ -155,12 +223,12 @@ test("search filters items", () => {
   controller.open()
   // No search - all items visible
   assert.equal(controller.list.filteredCount, GIT_COMMANDS.length)
-  // Search for "push" - should match Push and Force Push
+  // Search for "push" - should match Push, Push Tags, and Force Push
   controller.handleInput("p")
   controller.handleInput("u")
   controller.handleInput("s")
   controller.handleInput("h")
-  assert.ok(controller.list.filteredCount < GIT_COMMANDS.length)
+  assert.equal(controller.list.filteredCount, 3)
 })
 
 // --- Navigation ---
@@ -219,7 +287,7 @@ test("end key moves to last", () => {
 test("page up moves selection up by 10", () => {
   const { controller } = createController()
   controller.open()
-  controller.handleInput("\x1b[F") // end (index 5 for 6 items)
+  controller.handleInput("\x1b[F") // end (index 9 for 10 items)
   controller.handleInput("\x1b[5~") // page up
   assert.equal(controller.list.selectedIndex, 0) // clamped at 0
 })
@@ -249,9 +317,9 @@ test("enter after navigating selects the new command", () => {
     selectedCommand = cmd
   })
   controller.open()
-  controller.handleInput("\x1b[B") // down to 1
+  controller.handleInput("\x1b[B") // down to Fetch + Prune
   controller.handleInput("\r") // enter
-  assert.equal(selectedCommand?.label, GIT_COMMANDS[1].label)
+  assert.equal(selectedCommand?.label, "Fetch + Prune")
 })
 
 test("Force Push previews on first Enter and repeated Enter cannot run it", () => {
@@ -355,9 +423,8 @@ test("renderOverlayLines produces expected number of lines", () => {
   const { controller } = createController()
   controller.open()
   const lines = controller.renderOverlayLines(40, 100, mockTheme)
-  // Border top, title, subtitle, search, blank, items..., blank, border bottom
-  // With 6 commands: 3 header + 6 items + 2 footer + search + 2 blank = 14
-  assert.ok(lines.length >= 8)
+  // The 20-line overlay has room to render all 10 commands without scrolling.
+  assert.equal(lines.length, 20)
 })
 
 test("renderOverlayLines includes title", () => {

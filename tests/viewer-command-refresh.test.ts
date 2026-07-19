@@ -108,11 +108,11 @@ function assertFullCommandRefresh(
   assert.deepEqual(viewer.currentDocument(), fresh)
 }
 
-test("fetch and push use one status process and preserve metadata-only viewer state", async () => {
+test("fetch variants and pushes use one status process and preserve metadata-only viewer state", async () => {
   const repo = await createTempGitRepository()
   try {
     const current = await loadWorkingTreeDiff(createTrackingGitPi().pi, context(repo.path))
-    for (const label of ["Fetch", "Push"]) {
+    for (const label of ["Fetch", "Fetch + Prune", "Fetch All Remotes", "Push", "Push Tags"]) {
       const command = commandByLabel(label)
       const intercepted = createInterceptedCommandPi({ args: command.args })
       const viewer = createViewer(intercepted.pi, repo.path, current)
@@ -188,10 +188,12 @@ test("a failed ref-only command detects content changes behind an unchanged dirt
   }
 })
 
-test("pull success and pull-rebase failure always perform full refreshes", async () => {
+test("content-changing commands always perform full refreshes", async () => {
   for (const scenario of [
     { label: "Pull", code: 0, path: "pull.txt" },
+    { label: "Pull (FF Only)", code: 0, path: "ff-only.txt" },
     { label: "Pull (Rebase)", code: 1, path: "rebase-conflict.txt" },
+    { label: "Update Submodules", code: 1, path: "submodule-update.txt" },
   ]) {
     const repo = await createTempGitRepository()
     try {
@@ -199,7 +201,7 @@ test("pull success and pull-rebase failure always perform full refreshes", async
       const command = commandByLabel(scenario.label)
       const intercepted = createInterceptedCommandPi({
         args: command.args,
-        result: scenario.code === 0 ? undefined : { code: scenario.code, stderr: "partial rebase" },
+        result: scenario.code === 0 ? undefined : { code: scenario.code, stderr: "partial command failure" },
         beforeResult: () => writeRepoFile(repo.path, scenario.path, "command-created content\n"),
       })
       const viewer = createViewer(intercepted.pi, repo.path, current)
@@ -211,7 +213,7 @@ test("pull success and pull-rebase failure always perform full refreshes", async
       if (scenario.code === 0) {
         assert.equal(viewer.visibleError(), undefined)
       } else {
-        assert.match(viewer.visibleError() ?? "", /partial rebase/u)
+        assert.match(viewer.visibleError() ?? "", /partial command failure/u)
       }
     } finally {
       await repo.cleanup()
