@@ -149,13 +149,13 @@
     },
     {
       "path": "src/diff-intraline-algorithm.ts",
-      "bytes": 6185,
-      "sha256": "6653a6bfbd1bb04801eb51d9c38445c73bd466ea964d7541555fec2e9838c281"
+      "bytes": 1967,
+      "sha256": "a225c2d7bfac1575b23b5ad00f8c4d57637954daf572de4201d8e4681b60db90"
     },
     {
       "path": "src/diff-intraline.ts",
-      "bytes": 9551,
-      "sha256": "e84c9d0ebc851f3ff302a9a8dd9c05362c6fe99452ce578a54bfb8fff3dafada"
+      "bytes": 5084,
+      "sha256": "66c1fc4ef2b46d7a574eec6a955bd4ac33ae71dbb65acaa4313dbe5af4684816"
     },
     {
       "path": "src/diff-line-style.ts",
@@ -791,33 +791,33 @@
     },
     {
       "path": "dist/src/diff-intraline-algorithm.d.ts",
-      "bytes": 979,
-      "sha256": "1c78a85a6d53fe1105cf11a366ed51021da1d23e554d262eb8f8bd14c7a8dee9"
+      "bytes": 400,
+      "sha256": "376b2253f95aa44e86e7a910e2efb489062ef32e270aa7a8b819ee993b7cac37"
     },
     {
       "path": "dist/src/diff-intraline-algorithm.js",
-      "bytes": 5634,
-      "sha256": "10fe78ac3bde41afbd9f273636461a4031d461ad243d4435533e1ebf37ac8e25"
+      "bytes": 1578,
+      "sha256": "f41671cf308f8dd141bf9ec53306fb13518373d5f41a100095c04b5727e7083a"
     },
     {
       "path": "dist/src/diff-intraline-algorithm.js.map",
-      "bytes": 13070,
-      "sha256": "333f41da31af55262f0fba29eed130a4d600e060d2079f1a666bb71f55836a39"
+      "bytes": 3962,
+      "sha256": "fa6e017e4348257b2316e23363282e7fb5b316f67c8ace334adb73d40e257f70"
     },
     {
       "path": "dist/src/diff-intraline.d.ts",
-      "bytes": 1148,
-      "sha256": "ded2253179a61bf5447a052ab88bd0c5555947a3f20b377d469eef317267258e"
+      "bytes": 861,
+      "sha256": "96c5b61823ee986cddf0186f9f36e932a4e9870898d9905345e6b0df6de04270"
     },
     {
       "path": "dist/src/diff-intraline.js",
-      "bytes": 7531,
-      "sha256": "ebf315bff4603a68fcb5463dfff8f895d4fd2f64e166b33631bfcc309e720096"
+      "bytes": 4007,
+      "sha256": "e3468eadbd7bbfa361fc932d0792866d77f1df50f6b9206d697728317ed2945d"
     },
     {
       "path": "dist/src/diff-intraline.js.map",
-      "bytes": 18149,
-      "sha256": "da55c2101877806ca04a96a00e14921463dd65f77d4e4b8c50046fb5eecf0857"
+      "bytes": 9699,
+      "sha256": "a9248b7048c69dd7f6ea3f87887db5b80d512558ce57e124eeb7e0617d2bec64"
     },
     {
       "path": "dist/src/diff-line-style.d.ts",

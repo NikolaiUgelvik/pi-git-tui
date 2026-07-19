@@ -35,32 +35,41 @@ function changedFragments(
   return rows.map((row, index) => ("text" in row ? fragments(row.text, spansByRow[index]) : []))
 }
 
-test("bounded line alignment handles inserted lines and unequal runs", () => {
+test("unequal added and deleted counts do not receive intraline highlights", () => {
   const { rows, plan: result } = plan(
-    ["const alpha = 1", "const beta = 2"],
-    ["const inserted = 0", "const alpha = 1", "const beta = 3"],
+    ["pub fn make_exif_orientation_6_jpeg(path: &Path) {", "fs::write(path, EXIF_ORIENTATION_6_JPEG).unwrap();"],
+    [
+      "pub fn make_exif_orientation_jpeg(path: &Path, orientation: u8) {",
+      "let mut jpeg = EXIF_ORIENTATION_6_JPEG.to_vec();",
+      "jpeg[31] = orientation;",
+      "fs::write(path, jpeg).unwrap();",
+    ],
   )
 
-  assert.deepEqual(changedFragments(rows, result.spansByRow), [
-    [],
-    [],
-    ["2"],
-    ["const", "inserted", "=", "0"],
-    [],
-    ["3"],
-  ])
+  assert.deepEqual(changedFragments(rows, result.spansByRow), [[], [], [], [], [], [], []])
 })
 
-test("token changes preserve punctuation and ignore whitespace-only differences", () => {
-  const punctuation = plan("call(foo, oldValue);".split("\n"), "call(foo, newValue)!".split("\n"))
-  assert.deepEqual(changedFragments(punctuation.rows, punctuation.plan.spansByRow), [
-    [],
-    ["oldValue", ";"],
-    ["newValue", "!"],
-  ])
+test("equal change blocks pair lines positionally", () => {
+  const { rows, plan: result } = plan(["const alpha = 1", "const beta = 2"], ["const inserted = 0", "const beta = 3"])
 
-  const whitespace = plan(["alpha beta\t"], ["alpha  beta    "])
-  assert.deepEqual(changedFragments(whitespace.rows, whitespace.plan.spansByRow), [[], [], []])
+  assert.deepEqual(changedFragments(rows, result.spansByRow), [[], ["alpha = 1"], ["2"], ["inserted = 0"], ["3"]])
+})
+
+test("paired lines highlight one range after their common prefix and suffix", () => {
+  const { rows, plan: result } = plan(
+    ["support::make_exif_orientation_6_jpeg(&layer);"],
+    ["support::make_exif_orientation_jpeg(&layer, 6);"],
+  )
+
+  assert.deepEqual(changedFragments(rows, result.spansByRow), [[], ["6_jpeg(&layer"], ["jpeg(&layer, 6"]])
+})
+
+test("insertions and deletions can decorate only one side", () => {
+  const insertion = plan(["prefix suffix"], ["prefix new suffix"])
+  assert.deepEqual(changedFragments(insertion.rows, insertion.plan.spansByRow), [[], [], ["new "]])
+
+  const deletion = plan(["prefix old suffix"], ["prefix suffix"])
+  assert.deepEqual(changedFragments(deletion.rows, deletion.plan.spansByRow), [[], ["old "], []])
 })
 
 test("blank and exact lines have no stronger decoration", () => {
@@ -69,39 +78,22 @@ test("blank and exact lines have no stronger decoration", () => {
 })
 
 test("changed spans stay aligned to Unicode graphemes", () => {
-  const oldText = "e\u0301 界 🇺🇦 👍🏽 👨‍👩‍👧‍👦"
-  const newText = "e\u0301 字 🇺🇦 👍🏻 👨‍👩‍👧‍👦"
+  const oldText = "prefix 👍🏽 suffix"
+  const newText = "prefix 👍🏻 suffix"
   const { rows, plan: result } = plan([oldText], [newText])
 
-  assert.deepEqual(changedFragments(rows, result.spansByRow), [[], ["界", "👍🏽"], ["字", "👍🏻"]])
+  assert.deepEqual(changedFragments(rows, result.spansByRow), [[], ["👍🏽"], ["👍🏻"]])
   for (const [index, row] of rows.entries()) {
     if (!("text" in row)) continue
+    const boundaries = new Set([
+      ...[...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(row.text)].map(({ index }) => index),
+      row.text.length,
+    ])
     for (const span of result.spansByRow[index] ?? []) {
-      assert.equal(
-        [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(row.text)].some(
-          ({ index }) => index === span.start,
-        ),
-        true,
-      )
+      assert.equal(boundaries.has(span.start), true)
+      assert.equal(boundaries.has(span.end), true)
     }
   }
-})
-
-test("repeated tokens use deterministic alignment", () => {
-  const first = plan(["value + value + old"], ["value + value + next"])
-  const second = plan(["value + value + old"], ["value + value + next"])
-  assert.deepEqual(first.plan, second.plan)
-  assert.deepEqual(changedFragments(first.rows, first.plan.spansByRow), [[], ["old"], ["next"]])
-})
-
-test("unrelated replacements mark non-whitespace tokens without positional zipping", () => {
-  const { rows, plan: result } = plan(["alpha one", "beta two"], ["totally different"])
-  assert.deepEqual(changedFragments(rows, result.spansByRow), [
-    [],
-    ["alpha", "one"],
-    ["beta", "two"],
-    ["totally", "different"],
-  ])
 })
 
 test("one-sided, malformed, context-separated, and conflict runs are barriers", () => {
@@ -154,52 +146,40 @@ test("span reconstruction never changes normalized line content", () => {
 
 test("declared conservative limits remain fixed", () => {
   assert.deepEqual(INTRALINE_LIMITS, {
-    lineUtf16Units: 8_192,
+    lineUtf16Units: 1_024,
     graphemesPerLine: 1_024,
-    tokensPerLine: 256,
     rowsPerRun: 128,
     linesPerSide: 64,
-    tokensPerRun: 4_096,
-    lineAlignmentCellsPerRun: 4_225,
-    tokenLcsCellsPerPair: 16_384,
-    tokenLcsCellsPerRun: 65_536,
     changeRowsPerFile: 4_096,
     changeRunsPerFile: 256,
-    tokensPerFile: 65_536,
-    alignmentCellsPerFile: 65_536,
-    tokenLcsCellsPerFile: 262_144,
+    graphemesPerFile: 65_536,
   })
 })
 
-test("token and line-run boundaries use deterministic fallback one over", () => {
-  const atLcsCellLimit = `${"!".repeat(126)}a`
-  const lcsResult = plan([atLcsCellLimit], [`${"!".repeat(126)}b`])
-  assert.deepEqual(changedFragments(lcsResult.rows, lcsResult.plan.spansByRow).slice(-2), [["a"], ["b"]])
+test("line and run boundaries use deterministic fallback one over", () => {
+  const atLineLimit = `${"a".repeat(INTRALINE_LIMITS.lineUtf16Units - 1)}x`
+  const lineResult = plan([atLineLimit], [`${atLineLimit.slice(0, -1)}y`])
+  assert.deepEqual(changedFragments(lineResult.rows, lineResult.plan.spansByRow).slice(-2), [["x"], ["y"]])
 
-  const atTokenLimit = `${"!".repeat(INTRALINE_LIMITS.tokensPerLine - 1)}a`
-  const tokenResult = plan([atTokenLimit], [`${"!".repeat(INTRALINE_LIMITS.tokensPerLine - 1)}b`])
+  const overLineLimit = `${atLineLimit}x`
+  const overLineResult = plan([overLineLimit], [`${overLineLimit.slice(0, -1)}y`])
   assert.equal(
-    tokenResult.plan.spansByRow.every((spans) => spans === undefined),
-    true,
-  )
-
-  const overTokenLimit = "!".repeat(INTRALINE_LIMITS.tokensPerLine + 1)
-  const overResult = plan([overTokenLimit], [`${overTokenLimit.slice(0, -1)}?`])
-  assert.equal(
-    overResult.plan.spansByRow.every((spans) => spans === undefined),
+    overLineResult.plan.spansByRow.every((spans) => spans === undefined),
     true,
   )
 
   const oldAtLimit = Array.from({ length: INTRALINE_LIMITS.linesPerSide }, (_, index) => `line ${index}`)
   const newAtLimit = oldAtLimit.map((line, index) => (index === oldAtLimit.length - 1 ? "line changed" : line))
-  const lineResult = plan(oldAtLimit, newAtLimit)
-  assert.deepEqual(fragments(newAtLimit.at(-1) ?? "", lineResult.plan.spansByRow.at(-1)), ["changed"])
+  const runResult = plan(oldAtLimit, newAtLimit)
+  assert.deepEqual(fragments(newAtLimit.at(-1) ?? "", runResult.plan.spansByRow.at(-1)), ["changed"])
 
   const overLines = [...oldAtLimit, "one over"]
-  const changedOverLines = overLines.map((line, index) => (index === overLines.length - 1 ? "changed over" : line))
-  const overLineResult = plan(overLines, changedOverLines)
+  const overRunResult = plan(
+    overLines,
+    overLines.map((line) => `${line}!`),
+  )
   assert.equal(
-    overLineResult.plan.spansByRow.every((spans) => spans === undefined),
+    overRunResult.plan.spansByRow.every((spans) => spans === undefined),
     true,
   )
 })

@@ -11,18 +11,11 @@ export interface IntralinePlan {
 export interface IntralineLimits {
     readonly lineUtf16Units: number;
     readonly graphemesPerLine: number;
-    readonly tokensPerLine: number;
     readonly rowsPerRun: number;
     readonly linesPerSide: number;
-    readonly tokensPerRun: number;
-    readonly lineAlignmentCellsPerRun: number;
-    readonly tokenLcsCellsPerPair: number;
-    readonly tokenLcsCellsPerRun: number;
     readonly changeRowsPerFile: number;
     readonly changeRunsPerFile: number;
-    readonly tokensPerFile: number;
-    readonly alignmentCellsPerFile: number;
-    readonly tokenLcsCellsPerFile: number;
+    readonly graphemesPerFile: number;
 }
 export declare const INTRALINE_LIMITS: Readonly<IntralineLimits>;
 export declare function planIntralineChanges(rows: readonly DiffDisplayRow[], normalizedTextByRow: readonly string[]): IntralinePlan;

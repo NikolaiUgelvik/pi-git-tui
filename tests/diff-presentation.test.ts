@@ -188,8 +188,8 @@ test("changed spans retain syntax foregrounds over a stronger row-specific backg
 
   assert.match(deletion, sgr("38;2;100;150;220;48;2;60;40;40mconst "))
   assert.match(addition, sgr("38;2;100;150;220;48;2;40;50;40mconst "))
-  assert.match(deletion, sgr("1;38;2;100;150;220;48;2;102;58;58moldName"))
-  assert.match(addition, sgr("1;38;2;100;150;220;48;2;73;89;58mnewName"))
+  assert.match(deletion, sgr("1;38;2;100;150;220;48;2;102;58;58mold"))
+  assert.match(addition, sgr("1;38;2;100;150;220;48;2;73;89;58mnew"))
   assert.doesNotMatch(deletion, sgr("[^m]*38;2;200;100;100m"))
   assert.doesNotMatch(addition, sgr("[^m]*38;2;150;180;100m"))
   assert.equal(plain(deletion), "const oldName = 1")
