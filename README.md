@@ -1,96 +1,176 @@
-<p align="center"><img width="827" height="318" alt="image" src="https://github.com/user-attachments/assets/56377402-03c7-4af6-a543-73a45f39e8c6" /></p>
+<p>
+  <img src="assets/banner.png" alt="pi-git showing a syntax-highlighted historical diff" width="1100">
+</p>
 
-# pi-git
+# Pi Git
 
-A Pi package that adds an interactive git diff viewer command.
+A GitHub Desktop-style diff, staging, history, and commit workflow inside [Pi](https://github.com/badlogic/pi-mono).
 
-Review your changes, stage files, browse recent commits, run common git commands, and commit without leaving Pi. It is meant to make everyday git work feel native while you are already coding with an agent.
+Review syntax-highlighted changes, move files between the working tree and index, browse commits, manage branches and stashes, and commit without leaving Pi.
 
-## Command
+## Why This Exists
 
-```text
-/diff
-```
+Pi is already where the code changes happen. Reviewing those changes should not require switching to another app or reconstructing the state of the index from terminal commands.
 
-## Keyboard shortcut
+`pi-git` adds one full-screen `/diff` view with:
 
-- macOS: <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
-- Other platforms: <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
+- a file tree and responsive diff viewport;
+- separate, index-exact working and staged views;
+- syntax highlighting with GitHub Desktop-style intraline changes;
+- commit history, branch, stash, and worktree pickers;
+- guarded Git commands and recoverable async operations.
 
-## Installation
+Normal Git operations stay local. The model is only involved when you explicitly ask Pi to generate a commit message.
 
-Install from GitHub:
+## Install
 
 ```bash
 pi install git:github.com/NikolaiUgelvik/pi-git
 ```
 
-For source development, install the development dependencies and let Pi load TypeScript directly:
+Restart Pi after installation.
+
+## Quick Start
+
+Open the viewer from any directory inside a Git repository:
+
+```text
+/diff
+```
+
+Or use the global shortcut:
+
+| Platform | Shortcut |
+|----------|----------|
+| macOS | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> |
+| Linux / Windows | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> |
+
+The viewer opens on working-tree changes. Press <kbd>?</kbd> or <kbd>F1</kbd> at any time for context-sensitive help.
+
+## Everyday Workflow
+
+| Key | What it does |
+|-----|--------------|
+| <kbd>Tab</kbd> | Switch between the file tree and diff |
+| <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> | Move through files or scroll the diff |
+| <kbd>n</kbd>/<kbd>p</kbd> | Select the next or previous file |
+| <kbd>v</kbd> | Toggle working and staged views |
+| <kbd>Enter</kbd> | Stage the selected working file or unstage the selected staged file |
+| <kbd>Shift</kbd>+<kbd>Enter</kbd> | Stage all remaining changes or unstage everything |
+| <kbd>C</kbd> | Review staged changes; press again to open the commit dialog |
+| <kbd>c</kbd> | Browse the working tree and recent commits |
+| <kbd>Ctrl</kbd>+<kbd>P</kbd> | Open the Git command menu |
+| <kbd>r</kbd> | Reload the active diff or retry a failed refresh |
+| <kbd>?</kbd> / <kbd>F1</kbd> | Open context-sensitive help |
+| <kbd>q</kbd> / <kbd>Esc</kbd> | Close the viewer or active overlay |
+
+The diff viewport also supports half-page scrolling, fixed line-number gutters, horizontal scrolling with the arrow keys, and larger horizontal jumps with <kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd>.
+
+## Staging and Committing
+
+The working and staged views come directly from Git. `pi-git` does not approximate one from the other, so partially staged and mixed files remain accurate.
+
+A typical commit flow:
+
+1. Select a file and press <kbd>Enter</kbd> to stage its remaining changes.
+2. Press <kbd>v</kbd> to inspect the exact staged diff.
+3. Press <kbd>C</kbd> to enter staged review, then <kbd>C</kbd> again to compose the commit.
+4. Type a message, or press <kbd>Ctrl</kbd>+<kbd>G</kbd> to generate one from the staged diff.
+5. Press <kbd>Enter</kbd> to commit.
+
+Inside the commit dialog, <kbd>Ctrl</kbd>+<kbd>X</kbd> toggles amend mode. Normal commits are blocked when the index is empty; amend remains available when the repository has an existing `HEAD`.
+
+## History and Repository Tools
+
+### Commit history
+
+Press <kbd>c</kbd> to search recent commits by hash or message. Select a commit to inspect its diff, then press <kbd>W</kbd> to return directly to the working tree.
+
+### Branches, worktrees, and stashes
+
+| Key | Tool |
+|-----|------|
+| <kbd>b</kbd> | Search and switch branches; <kbd>Ctrl</kbd>+<kbd>N</kbd> creates one |
+| <kbd>w</kbd> | Search and switch worktrees |
+| <kbd>s</kbd> | Create, apply, pop, or drop stashes |
+| <kbd>D</kbd> | Review and confirm discarding the selected working-tree file |
+| <kbd>I</kbd> | Initialize Git when the current directory is not a repository |
+
+### Git command menu
+
+Press <kbd>Ctrl</kbd>+<kbd>P</kbd> to search and run common commands:
+
+- fetch, fetch with prune, or fetch all remotes;
+- pull, fast-forward-only pull, or pull with rebase;
+- push, push tags, or force-push with lease;
+- initialize and update submodules.
+
+Force-push always performs a porcelain dry run, shows the resolved destination and ref updates, and requires a second confirmation before execution.
+
+## Diff Rendering
+
+- Syntax highlighting is resolved from each file path, including renamed files.
+- Added and deleted blocks use subtle theme backgrounds while intraline changes use a stronger shade.
+- Intraline highlighting follows GitHub Desktop's behavior: equal-sized change blocks are paired by position, then the common prefix and suffix are removed to reveal one changed range.
+- Tabs, combining characters, CJK text, emoji, and wide graphemes remain safe during horizontal slicing.
+- Unsupported, binary, malformed, and oversized inputs fall back to a bounded plain presentation.
+- Narrow terminals switch to a single focused panel instead of squeezing both panes together.
+
+## Safety
+
+Git state can change while a command is running, so the viewer treats every load and mutation as an explicit operation:
+
+- destructive actions require confirmation;
+- Escape cancels active observation and triggers reconciliation when a mutation may already have taken effect;
+- failed post-mutation refreshes retry the refresh only—the Git mutation is never run twice;
+- stale async results cannot overwrite a newer repository, worktree, or document;
+- large files and diffs stay visible as `(omitted)` entries with the measured limit and reason instead of being truncated mid-hunk;
+- Git commands use bounded local, mutation, and network timeouts.
+
+## How It Works
+
+1. `/diff` captures one strict porcelain-v2 repository snapshot.
+2. Staged and working patches are loaded as separate bounded slices.
+3. Parsed files become immutable presentation rows with syntax and intraline styling.
+4. Tree, presentation, and filtered-list caches keep navigation and scrolling responsive.
+5. A single operation coordinator serializes loads, mutations, cancellation, reconciliation, and refresh-only recovery.
+
+See [`docs/architecture.md`](docs/architecture.md) for the full state model, Git boundaries, rendering pipeline, and testing strategy.
+
+## Development
+
+Run the extension directly from source:
 
 ```bash
 npm install
 npm run dev
 ```
 
-A local package install uses the same compiled entry point as GitHub and npm packages:
+Useful development commands:
 
 ```bash
-npm run build
-pi install ./path/to/pi-git
-```
-
-The compiled entry checks its build-manifest consistency before registering `/diff`, so missing or mixed installed output fails before extension modules execute. In a source checkout it also checks input hashes and the locked compiler identity; `npm run verify:build` supplies the independent clean-rebuild proof.
-
-## Developer loop
-
-Use the persistent incremental type checker while editing:
-
-```bash
-npm run typecheck
+# Persistent type checking
 npm run typecheck:watch
-```
 
-Run one or more test files without paying for a clean compile on every invocation:
+# One test file or the full suite in watch mode
+npm run test:file -- tests/diff-intraline.test.ts
+npm run test:watch
 
-```bash
-npm run test:file -- tests/diff-parser.test.ts
-npm run test:watch -- tests/diff-parser.test.ts
-```
+# Full repository checks
+npm test
+npm run check
 
-Omit the path from `test:watch` to watch the full test set discovered at startup. Targeted test commands still type-check the complete production and test program, but execute only the requested tests. They retain emitted tests and TypeScript build information in the Git-ignored `.tmp-tests/` directory; incremental type checking uses `.tmp-typecheck/`.
-
-Use `npm run test:clean`, `npm run typecheck:clean`, or `npm run clean:dev` to remove that state. `npm test` is deliberately different from the targeted loop: it starts from clean test output, runs every `tests/**/*.test.ts` file, and removes its output afterward. `npm run check` uses that single compile for both production and test type diagnostics before the remaining repository gates.
-
-Run `npm run benchmark:loop` to measure source-edit-to-result latency in an isolated copy. It performs 20 semantic source edits, reports command and persistent-watch p50/p95 separately for compiler and test completion, records machine/filesystem metadata, and restores/deletes all fixtures. Use `npm run benchmark:loop -- --assert` only in a controlled environment to enable the environment-sensitive ceiling.
-
-## Build and package checks
-
-```bash
+# Rebuild and independently verify committed production output
 npm run build
 npm run verify:build
-npm run smoke:package
 ```
 
-`npm run build` cleans `dist/` and emits production ESM JavaScript, declarations, and JavaScript source maps from `src/` and `extensions/`; tests are excluded. Declaration maps are intentionally disabled because the package does not ship TypeScript sources. `npm run verify:build` checks the locked compiler, rebuilds in an isolated temporary directory, and byte-compares the canonical output. `npm pack` runs the same clean build through `prepack`, and the package tarball contains only `dist/`, `README.md`, and npm's package metadata.
+Git installs use the committed `dist/` tree. `npm run verify:build` performs an isolated clean rebuild and byte-compares all production files so stale or mixed output fails before release.
 
-GitHub installs use the committed `dist/` tree because Pi installs git packages with production dependencies only. The `prepare` lifecycle rebuilds when the locked TypeScript compiler is installed and otherwise checks output against the committed manifest. CI and `verify:build` establish source-to-output reproducibility with an isolated clean rebuild; an artifact-local manifest alone is consistency checking, not tamper-resistant provenance.
+Performance fixtures are available through `benchmark:git`, `benchmark:render`, `benchmark:load`, and `benchmark:loop`.
 
-Measure repeated source-versus-built loading with:
+## Limitations
 
-```bash
-npm run benchmark:load -- --iterations 10
-```
-
-Each sample starts fresh discovery and full Pi RPC processes, so process and module caches are cold. The benchmark warms and does not flush the filesystem page cache; its results are cache-warm measurements, not physical-cold claims. It reports the extension-loader segment, extension-discovery process wall time, and full Pi RPC `/diff` command readiness separately. RPC readiness includes Pi initialization but not interactive TUI readiness.
-
-`npm run check` treats Biome, coverage-backed tests, reproducible build/package checks, Fallow dead-code analysis, and the changed-code complexity/duplication audit as blocking gates. `npm run benchmark:ci` runs the slower process, memory, render, Pi-readiness, and developer-loop thresholds intended for a controlled performance environment.
-
-## Large diffs
-
-Working-tree, historical, and generated commit-message inputs use explicit file, byte, argument, and line budgets. Paths that exceed a budget remain visible in the file tree with an `(omitted)` marker; selecting one shows the measured size, applicable limit, and omission reason. Patches are retained only as complete Git file records and are never sliced mid-hunk. On Unix, filenames containing invalid UTF-8 bytes are shown only as non-actionable omissions because Pi's extension executor transports output and arguments as JavaScript strings.
-
-To exercise the clean, 10/50/500-file, large untracked, large tracked, and large staged fixtures:
-
-```bash
-npm run benchmark:git -- --iterations 3
-```
+- Staging operates on the selected file's remaining changes or the full active slice; interactive hunk/line staging is not currently exposed.
+- Historical diffs are read-only. Return to the working tree before running mutations.
+- Very large inputs are intentionally represented as explicit omissions rather than partially rendered patches.

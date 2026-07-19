@@ -66,7 +66,7 @@ function runNpm(args, cwd = root) {
 function copyGitCheckout(name = "git-checkout") {
   const checkout = join(temporaryRoot, name)
   mkdirSync(checkout)
-  for (const directory of ["dist", "extensions", "scripts", "src"]) {
+  for (const directory of ["assets", "dist", "extensions", "scripts", "src"]) {
     cpSync(join(root, directory), join(checkout, directory), { recursive: true })
   }
   for (const file of [
@@ -205,7 +205,7 @@ function assertDirectoriesEqual(left, right) {
 
 function assertProductionPath(file) {
   const expectedRootFile = file === "package.json" || file === "README.md"
-  assert(expectedRootFile || file.startsWith("dist/"), `unexpected file: ${file}`)
+  assert(expectedRootFile || file.startsWith("assets/") || file.startsWith("dist/"), `unexpected file: ${file}`)
   assert(!file.startsWith("dist/tests/"), `production build emitted a test: ${file}`)
 }
 
@@ -221,6 +221,7 @@ function assertInstalledContents(packageRoot) {
   const files = collectRelativeFiles(packageRoot)
   assert(files.includes("package.json"), "installed tarball is missing package.json")
   assert(files.includes("README.md"), "installed tarball is missing README.md")
+  assert(files.includes("assets/banner.png"), "installed tarball is missing its README banner")
   assert(files.includes("dist/build-manifest.json"), "installed tarball is missing its build manifest")
   assert(files.includes("dist/extensions/diff.js"), "installed tarball is missing the emitted Pi entry")
   assert(files.includes("dist/extensions/diff.d.ts"), "installed tarball is missing exported declarations")
@@ -271,7 +272,7 @@ function assertActualLocalPiInstall(packageRoot) {
 
 async function assertPackageLoads(packageRoot) {
   const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"))
-  assert.deepEqual(packageJson.files, ["dist", "README.md"])
+  assert.deepEqual(packageJson.files, ["dist", "assets", "README.md"])
   assert.deepEqual(packageJson.pi?.extensions, ["./dist/extensions/diff.js"])
   assert.equal(packageJson.exports?.["."]?.import, "./dist/extensions/diff.js")
   assert.equal(packageJson.exports?.["."]?.types, "./dist/extensions/diff.d.ts")
