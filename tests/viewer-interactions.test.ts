@@ -274,10 +274,9 @@ test("historical mode consumes and suppresses every working-tree mutation shortc
   assert.deepEqual(diffViewer.overlayStates(), ["closed", "closed", "closed", "closed", "closed"])
   diffViewer.clearFeedback()
   const footer = diffViewer.render(240).join("\n")
-  assert.match(footer, /W working tree/u)
+  assert.match(footer, /\? help • q close • W tree/u)
   assert.match(footer, /c commits/u)
-  assert.match(footer, /w worktrees/u)
-  assert.doesNotMatch(footer, /stage remaining|D discard|C staged review|b branches|s stash|\^P commands/u)
+  assert.doesNotMatch(footer, /stage remaining|D discard|C staged review|b branches|w worktrees|s stash|\^P commands/u)
 
   diffViewer.handleInput("?")
   const help = diffViewer.render(240).join("\n")

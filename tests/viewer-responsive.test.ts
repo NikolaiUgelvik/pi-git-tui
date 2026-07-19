@@ -173,7 +173,7 @@ test("30-column footers keep compact escape, help, and close actions", () => {
   assert.match(historicalFooter, /q close/u)
 })
 
-test("navigation footers preserve contextual escape, help, and close actions", () => {
+test("navigation footers put help first and preserve contextual escape and close actions", () => {
   const historical = new ResponsiveViewer(
     {} as ExtensionAPI,
     { cwd: "/repo" } as ExtensionContext,
@@ -194,13 +194,10 @@ test("navigation footers preserve contextual escape, help, and close actions", (
       viewer(() => 16)
         .render(width)
         .at(-2) ?? ""
-    assert.match(workingFooter, /\? help/u)
-    assert.match(workingFooter, /q close/u)
+    assert.match(workingFooter, /\? help • q close/u)
 
     const historicalFooter = historical.render(width).at(-2) ?? ""
-    assert.match(historicalFooter, /W working tree/u)
-    assert.match(historicalFooter, /\? help/u)
-    assert.match(historicalFooter, /q close/u)
+    assert.match(historicalFooter, /\? help • q close • W tree/u)
   }
 })
 

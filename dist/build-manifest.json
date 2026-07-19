@@ -424,13 +424,13 @@
     },
     {
       "path": "src/viewer-footer-actions.ts",
-      "bytes": 3431,
-      "sha256": "5e195aa83298b59915bcf42a1722f07c79696c87487c5c630e8583f8e31c401d"
+      "bytes": 3576,
+      "sha256": "aea01d82eb577cfa57cb505b765bc37a30a39497cc6cc799d7d42e13e0356b72"
     },
     {
       "path": "src/viewer-frame.ts",
-      "bytes": 15893,
-      "sha256": "ab0fc905a72dded6ddba0eecc2b288d8533746426a8e12cd4d9160979862ff1d"
+      "bytes": 14935,
+      "sha256": "d8477a53c2ce440a34c4c06196f579cc9748dee3a0f921d15939914ff9dd699d"
     },
     {
       "path": "src/viewer-help.ts",
@@ -1591,33 +1591,33 @@
     },
     {
       "path": "dist/src/viewer-footer-actions.d.ts",
-      "bytes": 437,
-      "sha256": "167149f495e10e2642b0f90e772a7196a97243feb381af9904e8dae6d47b3fb4"
+      "bytes": 417,
+      "sha256": "035111be09208fd20dc99b55ecb74e8e0e359b82eb464dc0519aca4b294cb582"
     },
     {
       "path": "dist/src/viewer-footer-actions.js",
-      "bytes": 3126,
-      "sha256": "6b172cc5c26dd5991056018784204ee0ac838275071663b5c4042ad76480fe8e"
+      "bytes": 3449,
+      "sha256": "ad9f30bf1bf3afa780905fbc65311096e0ba8e518cab40c5fdfcb737142c71a7"
     },
     {
       "path": "dist/src/viewer-footer-actions.js.map",
-      "bytes": 7027,
-      "sha256": "2595e7e8c25021dbc862dc4208d54873a50b06f59ea860a9877d43306587da1c"
+      "bytes": 7387,
+      "sha256": "78b080a2f686eb421b0fe28cab24c43ca01a3dd646eeb5c8a2abca83c4c7bb07"
     },
     {
       "path": "dist/src/viewer-frame.d.ts",
-      "bytes": 1684,
-      "sha256": "6e62a1d6b8bae7449ad8301e130d6b8852c788a36325ad4ae3b6ff4cfc312cd9"
+      "bytes": 1519,
+      "sha256": "698dadb0dd54eb2d6f6d984ee30b1173f20a03dd9465cf7232efc692746604fe"
     },
     {
       "path": "dist/src/viewer-frame.js",
-      "bytes": 15977,
-      "sha256": "a8c85203bccd7e7e02b8d5647a3511f5df7a1e8eb2d71dd258b664855c820283"
+      "bytes": 15029,
+      "sha256": "d85550f20c0f11caef160c613d04b95a507745fe76fdfd16cfd227dbc49b79f2"
     },
     {
       "path": "dist/src/viewer-frame.js.map",
-      "bytes": 33912,
-      "sha256": "4e7803e6f5918eb2f988cd010d28cc8643d5c4f10cb70ba719c4d9e66531d1b5"
+      "bytes": 31939,
+      "sha256": "7af9e7fd26ede802dc54a764441eb9b694289049c78d7a523664f55f68f5d0f6"
     },
     {
       "path": "dist/src/viewer-help.d.ts",

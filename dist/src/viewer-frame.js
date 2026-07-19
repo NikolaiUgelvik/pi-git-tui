@@ -1,7 +1,7 @@
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { renderDiffViewport } from "./diff-viewport.js";
 import { fit } from "./render-text.js";
-import { measureViewerGeometry, SPLIT_LAYOUT_MIN_WIDTH } from "./responsive-geometry.js";
+import { measureViewerGeometry } from "./responsive-geometry.js";
 import { renderScrollbar } from "./scrollbar.js";
 import { TREE_STATUS_COLORS } from "./types.js";
 import { DiffViewerCore } from "./viewer-core.js";
@@ -94,9 +94,6 @@ export class DiffViewerFrame extends DiffViewerCore {
         const files = stats.files === 1 ? "1 file" : `${stats.files} files`;
         return `${files} +${stats.additions} −${stats.deletions}`;
     }
-    formatCompactStats(stats) {
-        return `${stats.files}/+${stats.additions}/−${stats.deletions}`;
-    }
     renderSubtitle(width) {
         return fit(this.theme.fg("dim", this.document.subtitle || " "), width);
     }
@@ -169,27 +166,12 @@ export class DiffViewerFrame extends DiffViewerCore {
         }
     }
     renderNavigationFooter(width) {
-        if (width < SPLIT_LAYOUT_MIN_WIDTH) {
-            const destination = this.focusedPanel === "tree" ? "diff" : "files";
-            const contextualEscape = this.document.mode === "commit" ? "W tree" : `Tab ${destination}`;
-            const summary = this.focusedPanel === "diff" ? "←→ cols" : "";
-            return this.theme.fg("dim", prioritizedFooter(summary, [contextualEscape, "? help", "q close"], width));
-        }
         const parts = viewerFooterActions({
             document: this.document,
             focusedPanel: this.focusedPanel,
             workingTreeView: this.workingTreeView,
-            totals: this.navigationTotals(),
         }, width);
         return fit(this.theme.fg("dim", parts.join(" • ")), width);
-    }
-    navigationTotals() {
-        if (this.document.mode !== "working") {
-            return "";
-        }
-        const staged = this.formatCompactStats(this.document.staged.stats);
-        const working = this.formatCompactStats(this.document.working.stats);
-        return `staged ${staged} • working ${working} • `;
     }
     renderTree(width, height) {
         if (this.files.length === 0) {

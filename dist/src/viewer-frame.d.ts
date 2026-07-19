@@ -16,11 +16,6 @@ export declare class DiffViewerFrame extends DiffViewerCore {
         additions: number;
         deletions: number;
     }): string;
-    protected formatCompactStats(stats: {
-        files: number;
-        additions: number;
-        deletions: number;
-    }): string;
     protected renderSubtitle(width: number): string;
     protected renderPanelTitle(panel: FocusPanel, width: number, single?: boolean): string;
     private diffColumnHint;
@@ -31,7 +26,6 @@ export declare class DiffViewerFrame extends DiffViewerCore {
     private renderOperationFailureFooter;
     private renderDocumentFooter;
     private renderNavigationFooter;
-    private navigationTotals;
     protected renderTree(width: number, height: number): string[];
     protected colorTreeFile(line: string, file: DiffFile, selected: boolean): string;
     protected renderDiff(width: number, height: number): string[];
