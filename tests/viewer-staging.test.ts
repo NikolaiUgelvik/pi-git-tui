@@ -69,7 +69,7 @@ test("v toggles between index-exact working and staged content", () => {
   assert.doesNotMatch(workingFrame, /\+staged content/u)
   assert.match(workingFrame, /Staged 2 files \+2 −2 • Working 2 files \+2 −2/u)
   assert.match(workingFrame, /◐ M mixed\.txt/u)
-  assert.match(workingFrame, /Enter stage remaining/u)
+  assert.match(workingFrame, /↵ stage/u)
 
   diffViewer.handleInput("v")
   const stagedFrame = diffViewer.render(200).join("\n")
@@ -77,7 +77,7 @@ test("v toggles between index-exact working and staged content", () => {
   assert.equal(diffViewer.activeScope(), "staged")
   assert.match(stagedFrame, /staged content/u)
   assert.doesNotMatch(stagedFrame, /\+working content/u)
-  assert.match(stagedFrame, /Enter unstage/u)
+  assert.match(stagedFrame, /↵ unstage/u)
 })
 
 test("commit flow enters staged-only review before opening the dialog", () => {

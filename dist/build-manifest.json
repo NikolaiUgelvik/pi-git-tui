@@ -424,8 +424,8 @@
     },
     {
       "path": "src/viewer-footer-actions.ts",
-      "bytes": 3576,
-      "sha256": "aea01d82eb577cfa57cb505b765bc37a30a39497cc6cc799d7d42e13e0356b72"
+      "bytes": 4298,
+      "sha256": "0c72790b09f18b799fb817c54b20ff0417d5e788ed2ab72f9e471b0bce5651de"
     },
     {
       "path": "src/viewer-frame.ts",
@@ -1596,13 +1596,13 @@
     },
     {
       "path": "dist/src/viewer-footer-actions.js",
-      "bytes": 3449,
-      "sha256": "ad9f30bf1bf3afa780905fbc65311096e0ba8e518cab40c5fdfcb737142c71a7"
+      "bytes": 4014,
+      "sha256": "6f7fd0901c46a6c779a10f693dc6e80e7b4b9d15c60ba8ebd428a7b89a9ae665"
     },
     {
       "path": "dist/src/viewer-footer-actions.js.map",
-      "bytes": 7387,
-      "sha256": "78b080a2f686eb421b0fe28cab24c43ca01a3dd646eeb5c8a2abca83c4c7bb07"
+      "bytes": 9315,
+      "sha256": "aa2dc21752936a7624978ca420ab59b3758473dee61f5b84bddcf705c13534f7"
     },
     {
       "path": "dist/src/viewer-frame.d.ts",

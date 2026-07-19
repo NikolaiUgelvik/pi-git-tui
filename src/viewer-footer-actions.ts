@@ -5,8 +5,7 @@ import { isViewerActionAvailable, type ViewerAction } from "./viewer-action-poli
 
 interface FooterAction {
   label: string
-  action?: ViewerAction
-  visible?: boolean
+  action: ViewerAction
 }
 
 export interface ViewerFooterContext {
@@ -16,11 +15,10 @@ export interface ViewerFooterContext {
 }
 
 function availableActions(context: ViewerFooterContext, actions: FooterAction[]): string[] {
-  return actions
-    .filter((item) => item.visible !== false)
-    .filter((item) => item.action === undefined || isViewerActionAvailable(context.document, item.action))
-    .map((item) => item.label)
+  return actions.filter((item) => isViewerActionAvailable(context.document, item.action)).map((item) => item.label)
 }
+
+const MAX_FOOTER_CONTROLS = 3
 
 function helpFirst(controls: string[]): string[] {
   const helpIndex = controls.indexOf("? help")
@@ -30,8 +28,27 @@ function helpFirst(controls: string[]): string[] {
   return [controls[helpIndex] ?? "? help", ...controls.slice(0, helpIndex), ...controls.slice(helpIndex + 1)]
 }
 
-export function prioritizedFooter(summary: string, controls: string[], width: number): string {
+function conciseControls(controls: string[]): string[] {
   const ordered = helpFirst(controls)
+  if (ordered.length <= MAX_FOOTER_CONTROLS) {
+    return ordered
+  }
+  const close = ordered.find((control) => control === "q close")
+  const prioritized = ordered.filter((control) => control !== close)
+  return close ? [...prioritized.slice(0, MAX_FOOTER_CONTROLS - 1), close] : prioritized.slice(0, MAX_FOOTER_CONTROLS)
+}
+
+function fitFooterControls(controls: string[], width: number): string[] {
+  const [first, ...remaining] = controls
+  const close = remaining.find((control) => control === "q close")
+  const contextual = remaining.filter((control) => control !== close)
+  const priority = [...(first ? [first] : []), ...(close ? [close] : []), ...contextual]
+  const selected = new Set(fitActions(priority, width))
+  return controls.filter((control) => selected.has(control))
+}
+
+export function prioritizedFooter(summary: string, controls: string[], width: number): string {
+  const ordered = fitFooterControls(conciseControls(controls), width)
   if (!summary) {
     return fit(ordered.join(" • "), width)
   }
@@ -56,57 +73,43 @@ function fitActions(actions: string[], width: number): string[] {
   return selected
 }
 
-export function viewerFooterActions(context: ViewerFooterContext, width: number): string[] {
+function contextualActions(context: ViewerFooterContext, hasFiles: boolean): FooterAction[] {
   const treeFocused = context.focusedPanel === "tree"
+  if (context.document.mode === "commit") {
+    return [
+      { label: "W tree", action: "workingTree" },
+      treeFocused || !hasFiles
+        ? { label: "c commits", action: "commitPicker" }
+        : { label: "↑↓ scroll", action: "navigate" },
+    ]
+  }
+
   const workingView = context.workingTreeView === "working"
+  if (!hasFiles) {
+    return [
+      { label: workingView ? "v staged" : "v working", action: "toggleView" },
+      { label: "c commits", action: "commitPicker" },
+    ]
+  }
+  if (treeFocused) {
+    return [
+      { label: workingView ? "↵ stage" : "↵ unstage", action: "stageFile" },
+      workingView ? { label: "v staged", action: "toggleView" } : { label: "C commit", action: "commit" },
+    ]
+  }
+  return [
+    { label: "↑↓ scroll", action: "navigate" },
+    workingView ? { label: "v staged", action: "toggleView" } : { label: "C commit", action: "commit" },
+  ]
+}
+
+export function viewerFooterActions(context: ViewerFooterContext, width: number): string[] {
   const activeFiles =
     context.document.mode === "working" ? context.document[context.workingTreeView].files : context.document.diff.files
-  const hasFiles = activeFiles.length > 0
-  const historical = context.document.mode === "commit"
-  const indexAction = workingView ? "stage remaining" : "unstage"
   const contextual: FooterAction[] = [
     { label: "? help", action: "help" },
     { label: "q close", action: "close" },
-    { label: "W tree", action: "workingTree" },
-    {
-      label: `Tab ${treeFocused ? "diff" : "files"}`,
-      action: "navigate",
-      visible: hasFiles,
-    },
-    {
-      label: treeFocused ? "↑↓/j/k files" : "↑↓/j/k scroll",
-      action: "navigate",
-      visible: hasFiles,
-    },
-    {
-      label: `Enter ${indexAction}`,
-      action: "stageFile",
-      visible: hasFiles && treeFocused,
-    },
-    {
-      label: "D discard",
-      action: "discard",
-      visible: hasFiles && treeFocused && workingView,
-    },
-    {
-      label: "←→ columns",
-      action: "navigate",
-      visible: hasFiles && !treeFocused,
-    },
-    {
-      label: "C commit",
-      action: "commit",
-      visible: hasFiles && !workingView,
-    },
-    {
-      label: workingView ? "v staged" : "v working",
-      action: "toggleView",
-    },
-    {
-      label: "c commits",
-      action: "commitPicker",
-      visible: !hasFiles || historical,
-    },
+    ...contextualActions(context, activeFiles.length > 0),
   ]
   return fitActions(availableActions(context, contextual), width)
 }

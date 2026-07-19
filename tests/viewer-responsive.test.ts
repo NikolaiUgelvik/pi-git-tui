@@ -140,16 +140,16 @@ test("file selection has a textual marker with a no-color theme", () => {
   assert.doesNotMatch(secondFrame, /▶ ○ M first\.ts/u)
 })
 
-test("30-column footers keep compact escape, help, and close actions", () => {
+test("30-column footers keep one contextual action, help, and close", () => {
   const workingViewer = viewer(() => 10)
   const treeFooter = workingViewer.render(30).at(-2) ?? ""
-  assert.match(treeFooter, /Tab diff/u)
+  assert.match(treeFooter, /↵ stage/u)
   assert.match(treeFooter, /\? help/u)
   assert.match(treeFooter, /q close/u)
 
   workingViewer.handleInput("\t")
   const diffFooter = workingViewer.render(30).at(-2) ?? ""
-  assert.match(diffFooter, /Tab files/u)
+  assert.match(diffFooter, /↑↓ scroll/u)
   assert.match(diffFooter, /\? help/u)
   assert.match(diffFooter, /q close/u)
 
