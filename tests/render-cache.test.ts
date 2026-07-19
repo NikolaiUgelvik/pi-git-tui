@@ -3,12 +3,16 @@ import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { formatDiffDisplay } from "../src/diff-display.js"
 import { buildWorkingTreeDocument } from "../src/diff-document.js"
+import { type PreparedDiffDisplay, prepareDiffPresentation } from "../src/diff-presentation.js"
+import type { SyntaxHighlighting } from "../src/diff-syntax.js"
 import { FilterableListState, matchesSearch, searchTokens } from "../src/filterable-list-state.js"
 import { buildTreeRows } from "../src/tree.js"
 import type { DiffDocument, DiffFile } from "../src/types.js"
 import { DiffViewerFrame } from "../src/viewer-frame.js"
 import {
   diffDisplayGutterWidth,
+  MAX_CURRENT_DIFF_ROWS,
+  MAX_CURRENT_DIFF_WEIGHT_BYTES,
   MAX_RETAINED_DIFF_ROWS,
   MAX_RETAINED_DIFF_WEIGHT_BYTES,
   ViewerRenderCache,
@@ -20,6 +24,14 @@ const theme = {
   bg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as Theme
+
+const plainSyntax: SyntaxHighlighting = {
+  languageFromPath: () => undefined,
+  highlight: (code) => code.split("\n"),
+}
+const presenter = (file: DiffFile): PreparedDiffDisplay => prepareDiffPresentation(file, theme, plainSyntax)
+const renderCache = (files: readonly DiffFile[], selectedPresenter = presenter): ViewerRenderCache =>
+  new ViewerRenderCache(files, selectedPresenter)
 
 function diffFile(path: string, lineCount: number): DiffFile {
   const lines = Array.from({ length: lineCount }, (_, index) => ` line ${index + 1}`)
@@ -52,6 +64,14 @@ function document(files: DiffFile[]): DiffDocument {
 class InstrumentedFrameViewer extends DiffViewerFrame {
   scrollBy(delta: number): void {
     this.scrollDiff(delta)
+  }
+
+  scrollHorizontallyBy(delta: number): void {
+    this.diffColumn += delta
+  }
+
+  invalidateTheme(): void {
+    this.invalidateDiffPresentation()
   }
 
   moveBy(delta: number): void {
@@ -94,42 +114,50 @@ function frameViewer(files: DiffFile[]): InstrumentedFrameViewer {
 test("selected-file display cache preserves rows and gutter across repeated scrolling", () => {
   const file = diffFile("src/large.ts", 1_000)
   const expectedRows = formatDiffDisplay(file)
-  const cache = new ViewerRenderCache([file])
+  const cache = renderCache([file])
 
   const first = cache.selectedFileDisplay(0)
 
   assert.ok(first)
-  assert.deepEqual(first.rows, expectedRows)
-  assert.equal(first.gutterWidth, diffDisplayGutterWidth(expectedRows))
+  assert.deepEqual(
+    first.rows.map((row) => row.semantic),
+    expectedRows,
+  )
+  assert.equal(first.gutterWidth, diffDisplayGutterWidth(expectedRows) + 4)
   assert.equal(Object.isFrozen(first.rows), true)
   assert.equal(Object.isFrozen(first.rows[0]), true)
   for (let scroll = 0; scroll < 200; scroll++) {
     assert.strictEqual(cache.selectedFileDisplay(0), first)
-    assert.deepEqual(first.rows.slice(scroll, scroll + 20), expectedRows.slice(scroll, scroll + 20))
+    assert.deepEqual(
+      first.rows.slice(scroll, scroll + 20).map((row) => row.semantic),
+      expectedRows.slice(scroll, scroll + 20),
+    )
   }
   assert.equal(cache.stats().selectedFileDisplayBuilds, 1)
 })
 
-test("oversized selected-file displays are never retained", () => {
+test("oversized selected-file displays are pinned in the bounded current slot", () => {
   const file = diffFile("historical-huge.txt", MAX_RETAINED_DIFF_ROWS + 1)
-  const cache = new ViewerRenderCache([file])
+  const cache = renderCache([file])
 
   const first = cache.selectedFileDisplay(0)
   const second = cache.selectedFileDisplay(0)
 
   assert.ok(first)
   assert.ok(second)
-  assert.notStrictEqual(first, second)
-  assert.equal(cache.stats().selectedFileDisplayBuilds, 2)
-  assert.equal(cache.stats().selectedFileDisplaySkips, 2)
+  assert.strictEqual(first, second)
+  assert.equal(cache.stats().selectedFileDisplayBuilds, 1)
+  assert.equal(cache.stats().selectedFileDisplaySkips, 1)
+  assert.equal(cache.stats().selectedFileDisplayPins, 1)
   assert.equal(cache.stats().retainedSelectedFileRows, 0)
   assert.equal(cache.stats().retainedSelectedFileWeightBytes, 0)
+  assert.equal(cache.stats().currentSelectedFileRows, first.rows.length)
 })
 
 test("selected-file display cache reuses bounded LRU entries and invalidates on replacement", () => {
   const firstFile = diffFile("a.ts", 10)
   const secondFile = diffFile("b.ts", 20)
-  const cache = new ViewerRenderCache([firstFile, secondFile])
+  const cache = renderCache([firstFile, secondFile])
 
   const firstA = cache.selectedFileDisplay(0)
   cache.selectedFileDisplay(1)
@@ -142,7 +170,10 @@ test("selected-file display cache reuses bounded LRU entries and invalidates on 
   cache.replaceDocument([replacement])
   const replacementDisplay = cache.selectedFileDisplay(0)
 
-  assert.deepEqual(replacementDisplay?.rows, formatDiffDisplay(replacement))
+  assert.deepEqual(
+    replacementDisplay?.rows.map((row) => row.semantic),
+    formatDiffDisplay(replacement),
+  )
   const stats = cache.stats()
   assert.equal(stats.documentVersion, 1)
   assert.equal(stats.selectedFileDisplayBuilds, 3)
@@ -153,8 +184,8 @@ test("selected-file display cache reuses bounded LRU entries and invalidates on 
 })
 
 test("selected-file LRU evicts the oldest cumulative entry within row and byte caps", () => {
-  const files = Array.from({ length: 6 }, (_, index) => diffFile(`medium-${index}.ts`, 9_000))
-  const cache = new ViewerRenderCache(files)
+  const files = Array.from({ length: 6 }, (_, index) => diffFile(`medium-${index}.ts`, 3_000))
+  const cache = renderCache(files)
   const firstZero = cache.selectedFileDisplay(0)
   const firstOne = cache.selectedFileDisplay(1)
   cache.selectedFileDisplay(2)
@@ -175,7 +206,7 @@ test("selected-file LRU evicts the oldest cumulative entry within row and byte c
 
 test("same-reference document replacement preserves expensive derivations", () => {
   const files = [diffFile("same.ts", 100)]
-  const cache = new ViewerRenderCache(files)
+  const cache = renderCache(files)
   const display = cache.selectedFileDisplay(0)
   const tree = cache.treeRows()
   const before = cache.stats()
@@ -192,6 +223,67 @@ test("same-reference document replacement preserves expensive derivations", () =
   assert.equal(after.treeBuilds, before.treeBuilds)
 })
 
+test("theme invalidation rebuilds presentation once without rebuilding tree rows", () => {
+  const files = [diffFile("theme.ts", 10)]
+  let presentationBuilds = 0
+  let highlighterCalls = 0
+  const countingSyntax: SyntaxHighlighting = {
+    languageFromPath: () => "typescript",
+    highlight: (code) => {
+      highlighterCalls++
+      return code.split("\n")
+    },
+  }
+  const cache = renderCache(files, (file) => {
+    presentationBuilds++
+    return prepareDiffPresentation(file, theme, countingSyntax)
+  })
+  const tree = cache.treeRows()
+  const first = cache.selectedFileDisplay(0)
+
+  cache.invalidatePresentation()
+  const second = cache.selectedFileDisplay(0)
+
+  assert.notStrictEqual(second, first)
+  assert.strictEqual(cache.treeRows(), tree)
+  assert.equal(presentationBuilds, 2)
+  assert.equal(highlighterCalls, 4)
+  assert.equal(cache.stats().syntaxHighlighterCalls, 4)
+  assert.equal(cache.stats().themeInvalidations, 1)
+  assert.equal(cache.stats().presentationGeneration, 1)
+  assert.equal(cache.stats().treeBuilds, 1)
+})
+
+test("current slot stays bounded and is replaced when another file becomes current", () => {
+  const oversized = diffFile("oversized.txt", MAX_RETAINED_DIFF_ROWS + 1)
+  const small = diffFile("small.txt", 1)
+  const cache = renderCache([oversized, small])
+  const first = cache.selectedFileDisplay(0)
+  assert.ok(first)
+  assert.equal(cache.stats().currentSelectedFileRows <= MAX_CURRENT_DIFF_ROWS, true)
+  assert.equal(cache.stats().currentSelectedFileWeightBytes <= MAX_CURRENT_DIFF_WEIGHT_BYTES, true)
+
+  cache.selectedFileDisplay(1)
+  assert.equal(cache.stats().currentSelectedFileRows, 0)
+  assert.notStrictEqual(cache.selectedFileDisplay(0), first)
+  assert.equal(cache.stats().selectedFileDisplayPins, 2)
+})
+
+test("presentations beyond the current-slot cap are returned unretained", () => {
+  const file = diffFile("too-heavy.txt", 1)
+  let builds = 0
+  const base = presenter(file)
+  const cache = renderCache([file], () => {
+    builds++
+    return { ...base, weightBytes: MAX_CURRENT_DIFF_WEIGHT_BYTES + 1 }
+  })
+
+  assert.notStrictEqual(cache.selectedFileDisplay(0), cache.selectedFileDisplay(0))
+  assert.equal(builds, 2)
+  assert.equal(cache.stats().currentSelectedFileRows, 0)
+  assert.equal(cache.stats().selectedFileDisplaySkips, 2)
+})
+
 test("tree rows preserve distinct logical changes that share one path", () => {
   const deleted: DiffFile = { path: "same.txt", status: "deleted", staged: true, lines: [] }
   const recreated: DiffFile = {
@@ -202,7 +294,7 @@ test("tree rows preserve distinct logical changes that share one path", () => {
     untrackedRole: "replacement",
     lines: [],
   }
-  const cache = new ViewerRenderCache([deleted, recreated])
+  const cache = renderCache([deleted, recreated])
 
   assert.deepEqual(
     cache.treeRows().flatMap((row) => (row.fileIndex === undefined ? [] : [row.fileIndex])),
@@ -240,7 +332,7 @@ test("tree cache preserves rows, order, and lookups without rebuilding during na
   ]
   const expectedRows = buildTreeRows(files)
   const expectedOrder = expectedRows.flatMap((row) => (row.fileIndex === undefined ? [] : [row.fileIndex]))
-  const cache = new ViewerRenderCache(files)
+  const cache = renderCache(files)
 
   assert.deepEqual(cache.treeRows(), expectedRows)
   assert.deepEqual(cache.treeFileOrder(), expectedOrder)
@@ -309,6 +401,24 @@ test("viewer scrolling reuses selected display derivation and returns identical 
   assert.equal(stats.retainedSelectedFileRows, 1_001)
   assert.equal(stats.retainedSelectedFileWeightBytes <= MAX_RETAINED_DIFF_WEIGHT_BYTES, true)
   assert.equal(stats.treeBuilds, 1)
+})
+
+test("viewer resizing, responsive transitions, and both scroll axes reuse presentation", () => {
+  const viewer = frameViewer([diffFile("responsive.ts", 1_000)])
+  viewer.render(140)
+  const initialBuilds = viewer.stats().selectedFileDisplayBuilds
+
+  viewer.scrollBy(20)
+  viewer.scrollHorizontallyBy(10)
+  viewer.render(140)
+  viewer.render(70)
+  viewer.render(220)
+
+  assert.equal(viewer.stats().selectedFileDisplayBuilds, initialBuilds)
+  viewer.invalidateTheme()
+  viewer.render(140)
+  assert.equal(viewer.stats().selectedFileDisplayBuilds, initialBuilds + 1)
+  assert.equal(viewer.stats().themeInvalidations, 1)
 })
 
 test("viewer file navigation reuses tree derivation and returns identical output", () => {

@@ -123,6 +123,7 @@ test("startup failure blocks mutation overlays until the document reloads", asyn
     },
   } as unknown as ExtensionAPI
   const viewer = await openWithPi(pi)
+  const startupExecCalls = execCalls
 
   for (const input of ["C", "b", "s", "w", "\x10", "\n"]) {
     viewer.handleInput(input)
@@ -130,7 +131,7 @@ test("startup failure blocks mutation overlays until the document reloads", asyn
   await flushViewerWork(2)
 
   const frame = viewer.render(160).join("\n")
-  assert.equal(execCalls, 1)
+  assert.equal(execCalls, startupExecCalls)
   assert.doesNotMatch(frame, /Commit staged changes/u)
   assert.doesNotMatch(frame, /│ Branches\s/u)
   assert.doesNotMatch(frame, /│ Stashes\s/u)
@@ -192,7 +193,7 @@ test("manual reload preserves active panel and selected path through a rename", 
   viewer.handleInput("\t")
 
   viewer.handleInput("r")
-  await flushViewerWork()
+  await waitForViewerIdle(viewer)
 
   assert.equal(viewer.focus(), "diff")
   assert.equal(viewer.selectedPath(), "c.ts")

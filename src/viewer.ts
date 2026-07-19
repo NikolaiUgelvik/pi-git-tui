@@ -138,6 +138,7 @@ export class DiffViewer extends DiffViewerWorktreePicker implements Focusable {
   }
 
   invalidate(): void {
+    this.invalidateDiffPresentation()
     this.activeTextField()?.invalidate()
   }
 }

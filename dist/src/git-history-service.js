@@ -1,12 +1,11 @@
 import { assertGitSuccess, isUnbornHeadResult, probeGit, requireGitRepository, runGit } from "./git-service.js";
 import { COMMIT_LIMIT } from "./types.js";
 export async function getCommits(pi, cwd, signal) {
-    const root = await requireGitRepository(pi, cwd, signal);
     const args = ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"];
-    const result = await probeGit(pi, root, args, { signal });
+    const result = await probeGit(pi, cwd, args, { signal });
     if (isUnbornHeadResult(result))
         return [];
-    assertGitSuccess(result, args, root);
+    assertGitSuccess(result, args, cwd);
     if (!result.stdout.trim())
         return [];
     return result.stdout.split("\n").map((line) => {

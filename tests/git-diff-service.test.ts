@@ -69,6 +69,26 @@ test("working snapshot distinguishes a missing repository from a clean repositor
   assert.equal(cleanDocument.staged.files.length, 0)
 })
 
+test("clean working-tree loads overlap repository discovery with status", async () => {
+  let repositoryResolved = false
+  const pi = createPi(async (args) => {
+    if (commandKey(args) === "rev-parse --show-toplevel") {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      repositoryResolved = true
+      return gitResult("/repo\n")
+    }
+    if (args[0] === "status") {
+      assert.equal(repositoryResolved, false)
+      return workingSnapshotResult(args, "/repo") as GitExecResult
+    }
+    return gitResult("", 99, `unexpected git ${commandKey(args)}`)
+  })
+
+  const document = await loadWorkingTreeDocument(pi, context("/repo/nested"))
+
+  assert.equal(document.repositoryState, "ready")
+})
+
 test("a bare repository is an explicit load failure rather than a missing repository", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-bare-"))
   try {

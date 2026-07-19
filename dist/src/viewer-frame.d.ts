@@ -4,6 +4,7 @@ import { type ViewerRenderCacheStats } from "./viewer-render-cache.js";
 export declare class DiffViewerFrame extends DiffViewerCore {
     private diffMaximumColumn;
     private readonly renderCache;
+    protected invalidateDiffPresentation(): void;
     protected renderCacheStats(): ViewerRenderCacheStats;
     render(width: number): string[];
     private frameBorder;

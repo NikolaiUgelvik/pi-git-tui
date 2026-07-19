@@ -116,6 +116,7 @@ export class DiffViewer extends DiffViewerWorktreePicker {
         }
     }
     invalidate() {
+        this.invalidateDiffPresentation();
         this.activeTextField()?.invalidate();
     }
 }

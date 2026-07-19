@@ -1,4 +1,6 @@
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { prepareDiffPresentation } from "./diff-presentation.js";
+import { piSyntaxHighlighting } from "./diff-syntax.js";
 import { renderDiffViewport } from "./diff-viewport.js";
 import { fit } from "./render-text.js";
 import { measureViewerGeometry } from "./responsive-geometry.js";
@@ -9,7 +11,10 @@ import { prioritizedFooter, viewerFooterActions } from "./viewer-footer-actions.
 import { ViewerRenderCache } from "./viewer-render-cache.js";
 export class DiffViewerFrame extends DiffViewerCore {
     diffMaximumColumn = 0;
-    renderCache = new ViewerRenderCache([]);
+    renderCache = new ViewerRenderCache([], (file) => prepareDiffPresentation(file, this.theme, piSyntaxHighlighting));
+    invalidateDiffPresentation() {
+        this.renderCache.invalidatePresentation();
+    }
     renderCacheStats() {
         this.renderCache.replaceDocument(this.files);
         return this.renderCache.stats();
@@ -238,9 +243,10 @@ export class DiffViewerFrame extends DiffViewerCore {
         }
         this.renderCache.replaceDocument(this.files);
         const display = this.renderCache.selectedFileDisplay(this.selectedFileIndex);
+        if (!display)
+            return [];
         const viewport = renderDiffViewport({
-            file,
-            displayRows: display?.rows,
+            display,
             width,
             height,
             verticalOffset: this.diffScroll,

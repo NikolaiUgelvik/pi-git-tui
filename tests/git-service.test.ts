@@ -26,7 +26,7 @@ import {
 } from "../src/git-service.js"
 import { applyStash, dropStash, getStashes, popStash, stashCurrentChanges } from "../src/git-stash-service.js"
 import { getWorktrees, switchWorktree } from "../src/git-worktree-service.js"
-import { GIT_TIMEOUT_MS, type GitExecResult } from "../src/types.js"
+import { COMMIT_LIMIT, GIT_TIMEOUT_MS, type GitExecResult } from "../src/types.js"
 import { workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
@@ -147,7 +147,7 @@ test("getBranchName returns current branch or detached HEAD label", async () => 
 })
 
 test("history service parses commits and reads commit details", async () => {
-  const { pi } = createRepoPi((args) => {
+  const { pi, calls } = createRepoPi((args) => {
     const command = args.join(" ")
     if (command.startsWith("log --max-count=")) return gitResult(readFixture("commit-list.txt"))
     if (command === "log -1 --format=%s abcdef0") return gitResult("Initial commit\n")
@@ -156,6 +156,10 @@ test("history service parses commits and reads commit details", async () => {
   })
 
   const commits = await getCommits(pi, "/repo")
+  assert.deepEqual(
+    calls.map((call) => call.args),
+    [["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"]],
+  )
   assert.equal(commits[0]?.hash, "abcdef0")
   assert.equal(commits[0]?.message, "Initial commit")
   assert.equal(await getCommitMessage(pi, "/repo", "abcdef0"), "Initial commit")

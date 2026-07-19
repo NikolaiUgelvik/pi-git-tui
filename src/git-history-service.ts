@@ -3,11 +3,10 @@ import { assertGitSuccess, isUnbornHeadResult, probeGit, requireGitRepository, r
 import { COMMIT_LIMIT, type CommitSummary } from "./types.js"
 
 export async function getCommits(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<CommitSummary[]> {
-  const root = await requireGitRepository(pi, cwd, signal)
   const args = ["log", `--max-count=${COMMIT_LIMIT}`, "--pretty=format:%h%x09%s"]
-  const result = await probeGit(pi, root, args, { signal })
+  const result = await probeGit(pi, cwd, args, { signal })
   if (isUnbornHeadResult(result)) return []
-  assertGitSuccess(result, args, root)
+  assertGitSuccess(result, args, cwd)
   if (!result.stdout.trim()) return []
   return result.stdout.split("\n").map((line) => {
     const [hash = "", ...messageParts] = line.split("\t")

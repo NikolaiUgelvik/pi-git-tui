@@ -1,48 +1,59 @@
-import { type DiffDisplayRow } from "./diff-display.js";
+import type { DiffDisplayRow } from "./diff-display.js";
+import type { PreparedDiffDisplay } from "./diff-presentation.js";
 import { type TreeRow } from "./tree.js";
 import type { DiffFile } from "./types.js";
-export interface SelectedFileDisplay {
-    readonly rows: readonly DiffDisplayRow[];
-    readonly gutterWidth: number;
-}
+export type DiffPresenter = (file: DiffFile) => PreparedDiffDisplay;
+export type SelectedFileDisplay = PreparedDiffDisplay;
 export declare const MAX_RETAINED_DIFF_ROWS = 50000;
 export declare const MAX_RETAINED_DIFF_WEIGHT_BYTES: number;
+export declare const MAX_CURRENT_DIFF_ROWS = 100000;
+export declare const MAX_CURRENT_DIFF_WEIGHT_BYTES: number;
 export interface ViewerRenderCacheStats {
     readonly documentVersion: number;
+    readonly presentationGeneration: number;
     readonly selectedFileDisplayAccesses: number;
     readonly selectedFileDisplayHits: number;
     readonly selectedFileDisplayMisses: number;
     readonly selectedFileDisplayBuilds: number;
     readonly selectedFileDisplaySkips: number;
+    readonly selectedFileDisplayPins: number;
     readonly retainedSelectedFileRows: number;
     readonly retainedSelectedFileWeightBytes: number;
+    readonly currentSelectedFileRows: number;
+    readonly currentSelectedFileWeightBytes: number;
+    readonly richSelectedFileDisplayBuilds: number;
+    readonly plainSelectedFileDisplayBuilds: number;
+    readonly syntaxHighlighterCalls: number;
+    readonly themeInvalidations: number;
     readonly treeBuilds: number;
 }
 export declare function diffDisplayGutterWidth(rows: readonly DiffDisplayRow[]): number;
-/**
- * Holds one document generation of viewer derivations.
- *
- * Diff documents are treated as immutable between replaceDocument() calls.
- * Each replacement or explicit invalidation advances the version and drops the
- * row/byte-bounded selected-file LRU and tree snapshot, so historical documents
- * cannot accumulate in the cache.
- */
+/** Holds bounded presentation and tree derivations for one immutable document reference. */
 export declare class ViewerRenderCache {
     private files;
+    private readonly presenter;
     private documentVersion;
+    private presentationGeneration;
     private selectedFileDisplayAccesses;
     private selectedFileDisplayHits;
     private selectedFileDisplayMisses;
     private selectedFileDisplayBuilds;
     private selectedFileDisplaySkips;
+    private selectedFileDisplayPins;
+    private richSelectedFileDisplayBuilds;
+    private plainSelectedFileDisplayBuilds;
+    private syntaxHighlighterCalls;
+    private themeInvalidations;
     private treeBuilds;
     private readonly selectedFileDisplaySnapshots;
     private retainedDisplayRows;
     private retainedDisplayWeightBytes;
+    private currentDisplay;
     private treeSnapshotValue;
-    constructor(files: readonly DiffFile[]);
+    constructor(files: readonly DiffFile[], presenter: DiffPresenter);
     replaceDocument(files: readonly DiffFile[]): void;
     invalidate(): void;
+    invalidatePresentation(): void;
     selectedFileDisplay(fileIndex: number): SelectedFileDisplay | undefined;
     treeRows(): readonly TreeRow[];
     treeFileOrder(): readonly number[];
@@ -50,6 +61,10 @@ export declare class ViewerRenderCache {
     treeRowIndex(fileIndex: number): number | undefined;
     fileIndexForPath(path: string): number | undefined;
     stats(): ViewerRenderCacheStats;
+    private isCurrent;
+    private fitsNormalTier;
+    private fitsCurrentTier;
+    private clearPresentations;
     private retainSelectedFileDisplay;
     private treeSnapshot;
 }

@@ -162,10 +162,15 @@ export async function loadWorkingTreeDiff(pi: ExtensionAPI, ctx: ExtensionContex
   const linked = linkedAbortController(ctx.signal)
   const signal = linked.controller.signal
   try {
-    const root = await ensureGitRepository(pi, ctx.cwd, signal)
+    const [repository, status] = await Promise.allSettled([
+      ensureGitRepository(pi, ctx.cwd, signal),
+      loadWorkingTreeSnapshot(pi, ctx.cwd, signal),
+    ])
+    if (repository.status === "rejected") throw repository.reason
+    const root = repository.value
     if (!root) return emptyWorkingTreeDocument("Not a git repository", ctx.cwd, "missing")
-    const snapshot = await loadWorkingTreeSnapshot(pi, root, signal)
-    return await loadWorkingTreeDiffFromSnapshot(pi, root, snapshot, signal)
+    if (status.status === "rejected") throw status.reason
+    return await loadWorkingTreeDiffFromSnapshot(pi, root, status.value, signal)
   } finally {
     linked.dispose()
   }

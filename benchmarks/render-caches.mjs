@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const samples = 20
 const rendersPerScenario = 100
+const sgrPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu")
+const stripAnsi = (line) => line.replace(sgrPattern, "")
 
 function percentile(values, fraction) {
   const sorted = [...values].sort((left, right) => left - right)
@@ -67,16 +69,16 @@ function compile(sourceRoot, outputRoot) {
       2,
     )}\n`,
   )
-  execFileSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", configPath], {
-    cwd: sourceRoot,
-    stdio: "inherit",
-  })
-  writeFileSync(join(outputRoot, "package.json"), '{"type":"module"}\n')
   symlinkSync(
     join(root, "node_modules"),
     join(outputRoot, "node_modules"),
     process.platform === "win32" ? "junction" : "dir",
   )
+  execFileSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), "-p", configPath], {
+    cwd: sourceRoot,
+    stdio: "inherit",
+  })
+  writeFileSync(join(outputRoot, "package.json"), '{"type":"module"}\n')
 }
 
 function diffFile(path, lineCount) {
@@ -184,7 +186,7 @@ function runFrame(instance, input, width, frameTimings, outputSequence) {
   instance.handleInput(input)
   const output = instance.render(width)
   frameTimings.push(performance.now() - started)
-  outputSequence.update(JSON.stringify(output))
+  outputSequence.update(JSON.stringify(output.map(stripAnsi)))
   outputSequence.update("\0")
 }
 
@@ -248,7 +250,7 @@ try {
   for (const [name, operation] of Object.entries(scenarios)) {
     const before = measureScenario(baseline, files, operation)
     const after = measureScenario(current, files, operation)
-    assert.equal(after.outputSequenceHash, before.outputSequenceHash, `${name} changed rendered output`)
+    assert.equal(after.outputSequenceHash, before.outputSequenceHash, `${name} changed ANSI-stripped output`)
     assert(
       after.scenarioMilliseconds.p50 <= before.scenarioMilliseconds.p50 * 1.2,
       `${name} median scenario time regressed by more than 20%`,
@@ -261,7 +263,7 @@ try {
     if (minimumHitRatio !== undefined) {
       assert((after.cacheHitRatio ?? 0) >= minimumHitRatio, `${name} cache hit ratio fell below ${minimumHitRatio}`)
     }
-    results[name] = { baseline: before, current: after, outputIdentical: true }
+    results[name] = { baseline: before, current: after, ansiStrippedOutputIdentical: true }
   }
 
   const memory = JSON.parse(

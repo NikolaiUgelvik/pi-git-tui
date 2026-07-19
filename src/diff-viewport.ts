@@ -1,35 +1,25 @@
 import type { Theme } from "@earendil-works/pi-coding-agent"
-import { visibleWidth } from "@earendil-works/pi-tui"
-import { normalizeTabs, sliceStyledColumns } from "./ansi-segments.js"
-import { type DiffDisplayRow, formatDiffDisplay } from "./diff-display.js"
-import { diffLineStyleForText } from "./diff-line-style.js"
-import type { DiffFile, ThemeColor } from "./types.js"
+import { slicePreparedColumns } from "./ansi-segments.js"
+import type { PreparedDiffDisplay } from "./diff-presentation.js"
 
 export interface DiffViewportInput {
-  file: DiffFile
-  width: number
-  height: number
-  verticalOffset: number
-  horizontalOffset: number
-  theme: Theme
-  displayRows?: readonly DiffDisplayRow[]
+  readonly display: PreparedDiffDisplay
+  readonly width: number
+  readonly height: number
+  readonly verticalOffset: number
+  readonly horizontalOffset: number
+  readonly theme: Theme
 }
 
 export interface DiffViewportResult {
-  lines: string[]
-  verticalOffset: number
-  horizontalOffset: number
-  maxVerticalOffset: number
-  maxHorizontalOffset: number
-  horizontallyScrollable: boolean
-  gutterWidth: number
-  contentWidth: number
-}
-
-interface PreparedRow {
-  row: DiffDisplayRow
-  gutter: string
-  content: string
+  readonly lines: string[]
+  readonly verticalOffset: number
+  readonly horizontalOffset: number
+  readonly maxVerticalOffset: number
+  readonly maxHorizontalOffset: number
+  readonly horizontallyScrollable: boolean
+  readonly gutterWidth: number
+  readonly contentWidth: number
 }
 
 function whole(value: number): number {
@@ -38,78 +28,6 @@ function whole(value: number): number {
 
 function clamp(value: number, maximum: number): number {
   return Math.max(0, Math.min(maximum, whole(value)))
-}
-
-function isNumberedRow(
-  row: DiffDisplayRow,
-): row is Extract<DiffDisplayRow, { type: "context" | "addition" | "deletion" }> {
-  return row.type === "context" || row.type === "addition" || row.type === "deletion"
-}
-
-function gutterDigits(rows: readonly DiffDisplayRow[]): number {
-  return rows.reduce((width, row) => (isNumberedRow(row) ? Math.max(width, String(row.lineNumber).length) : width), 0)
-}
-
-function lineRange(start: number, count: number): string {
-  return count === 1 ? String(start) : `${start}-${start + count - 1}`
-}
-
-function hunkRange(row: Extract<DiffDisplayRow, { type: "hunk" }>): string {
-  return row.newCount > 0
-    ? `lines ${lineRange(row.newStart, row.newCount)}`
-    : `old lines ${lineRange(row.oldStart, row.oldCount)}`
-}
-
-function rowContent(row: DiffDisplayRow, file: DiffFile): string {
-  if (row.type === "hunk") {
-    const section = row.sectionText ? ` ${row.sectionText}` : ""
-    return `@@ ${file.path} · ${hunkRange(row)} @@${section}`
-  }
-  return row.text
-}
-
-function prepareRows(rows: readonly DiffDisplayRow[], file: DiffFile): { rows: PreparedRow[]; gutterWidth: number } {
-  const digits = gutterDigits(rows)
-  const gutterWidth = digits === 0 ? 0 : digits + 4
-  return {
-    gutterWidth,
-    rows: rows.map((row) => ({
-      row,
-      gutter: isNumberedRow(row)
-        ? `${row.marker}${String(row.lineNumber).padStart(digits)} │ `
-        : " ".repeat(gutterWidth),
-      content: rowContent(row, file),
-    })),
-  }
-}
-
-function rowColor(row: DiffDisplayRow): ThemeColor {
-  switch (row.type) {
-    case "addition":
-      return "toolDiffAdded"
-    case "deletion":
-      return "toolDiffRemoved"
-    case "hunk":
-      return "accent"
-    case "summary":
-    case "unknown":
-      return "muted"
-    default:
-      return "toolDiffContext"
-  }
-}
-
-function colorRow(row: DiffDisplayRow, line: string, theme: Theme): string {
-  const probe = isNumberedRow(row) ? `${row.marker}${row.text}` : line
-  const conflictRule = diffLineStyleForText(probe)
-  if (conflictRule?.bold) {
-    return theme.fg(conflictRule.color, theme.bold(line))
-  }
-  return theme.fg(rowColor(row), line)
-}
-
-function maximumContentWidth(rows: PreparedRow[]): number {
-  return rows.reduce((maximum, row) => Math.max(maximum, visibleWidth(normalizeTabs(row.content))), 0)
 }
 
 function scrollbarMarker(index: number, height: number, contentHeight: number, offset: number, theme: Theme): string {
@@ -123,28 +41,24 @@ function scrollbarMarker(index: number, height: number, contentHeight: number, o
 export function renderDiffViewport(input: DiffViewportInput): DiffViewportResult {
   const width = whole(input.width)
   const height = whole(input.height)
-  const displayRows = input.displayRows ?? formatDiffDisplay(input.file)
-  const prepared = prepareRows(displayRows, input.file)
-  const maxVerticalOffset = Math.max(0, prepared.rows.length - height)
+  const maxVerticalOffset = Math.max(0, input.display.rows.length - height)
   const verticalOffset = clamp(input.verticalOffset, maxVerticalOffset)
-  const verticallyScrollable = height > 0 && prepared.rows.length > height
+  const verticallyScrollable = width > 0 && height > 0 && input.display.rows.length > height
   const bodyWidth = Math.max(0, width - (verticallyScrollable ? 1 : 0))
-  const visibleGutterWidth = Math.min(bodyWidth, prepared.gutterWidth)
+  const visibleGutterWidth = Math.min(bodyWidth, input.display.gutterWidth)
   const contentWidth = Math.max(0, bodyWidth - visibleGutterWidth)
-  const maxHorizontalOffset = Math.max(0, maximumContentWidth(prepared.rows) - contentWidth)
+  const maxHorizontalOffset = Math.max(0, input.display.maxContentWidth - contentWidth)
   const horizontalOffset = clamp(input.horizontalOffset, maxHorizontalOffset)
-  const visibleRows = prepared.rows.slice(verticalOffset, verticalOffset + height)
-  const lines = visibleRows.map((preparedRow, index) => {
-    const gutter = sliceStyledColumns(preparedRow.gutter, 0, visibleGutterWidth, { pad: true })
-    const content = sliceStyledColumns(preparedRow.content, horizontalOffset, contentWidth, { pad: true })
-    const row = colorRow(preparedRow.row, gutter + content, input.theme)
-    return verticallyScrollable
-      ? `${row}${scrollbarMarker(index, height, prepared.rows.length, verticalOffset, input.theme)}`
-      : row
+  const visibleRows = input.display.rows.slice(verticalOffset, verticalOffset + height)
+  const lines = visibleRows.map((row, index) => {
+    const gutter = slicePreparedColumns(row.gutter, 0, visibleGutterWidth, { pad: true })
+    const content = slicePreparedColumns(row.content, horizontalOffset, contentWidth, { pad: true })
+    const scrollbar = verticallyScrollable
+      ? scrollbarMarker(index, height, input.display.rows.length, verticalOffset, input.theme)
+      : ""
+    return `${gutter}${content}${scrollbar}`
   })
-  while (lines.length < height) {
-    lines.push(" ".repeat(width))
-  }
+  while (lines.length < height) lines.push(" ".repeat(width))
 
   return {
     lines,

@@ -7,6 +7,7 @@ import type { DiffDocument, DiffFile, WorkingTreeDocument } from "../src/types.j
 import { DiffViewerCore } from "../src/viewer-core.js"
 import { DiffViewerFrame } from "../src/viewer-frame.js"
 import { DiffViewerOverlayBase } from "../src/viewer-overlay-base.js"
+import { diffHighlightTheme, stripTestAnsi } from "./helpers/diff-highlighting.js"
 
 class TestViewerCore extends DiffViewerCore {
   visibleDiffRows(): number {
@@ -225,7 +226,7 @@ test("frame diff renders structured rows and hides raw metadata", () => {
     ]),
   )
 
-  const lines = viewer.diffLines(99, 6).map((line) => line.trimEnd())
+  const lines = viewer.diffLines(99, 6).map((line) => stripTestAnsi(line).trimEnd())
 
   assert.deepEqual(lines, [
     "     @@ src/example.ts · lines 1-3 @@ function demo()",
@@ -268,16 +269,15 @@ test("frame diff scrolls by formatted rows and aligns scrollbar height", () => {
 })
 
 test("frame diff preserves conflict marker styling in structured rows", () => {
-  const styledTheme = {
-    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
-    bg: (_color: string, text: string) => text,
-    bold: (text: string) => `<b>${text}</b>`,
-  } as Theme
-  const viewer = frameViewer(workingWithFiles([file("conflict.ts", ["@@ -1,0 +1,1 @@", "+<<<<<<< ours"])]), styledTheme)
+  const viewer = frameViewer(
+    workingWithFiles([file("conflict.ts", ["@@ -1,0 +1,1 @@", "+<<<<<<< ours"])]),
+    diffHighlightTheme,
+  )
 
   const lines = viewer.diffLines(99, 2).map((line) => line.trimEnd())
 
-  assert.match(lines[1] ?? "", /^<error><b>\+1 │ <<<<<<< ours\s*<\/b><\/error>$/u)
+  assert.equal(stripTestAnsi(lines[1] ?? "").trimEnd(), "+1 │ <<<<<<< ours")
+  assert.equal(lines[1]?.includes("\x1b[1;91;42m<<<<<<< ours"), true)
 })
 
 test("overlay merge preserves ANSI styling outside replaced columns", () => {
