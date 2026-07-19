@@ -81,6 +81,7 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
     { keys: "F1", action: "Show or close this help" },
   ],
   viewer: [
+    { keys: "Ctrl+P", action: "Open the Git command menu", viewerAction: "commands" },
     { keys: "Tab", action: "Switch focus between the file tree and diff", viewerAction: "navigate" },
     {
       keys: "↑/↓ or j/k",
@@ -113,7 +114,6 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
     { keys: "b", action: "Open the branch picker", viewerAction: "branches" },
     { keys: "w", action: "Open the worktree picker", viewerAction: "worktrees" },
     { keys: "s", action: "Open stash actions", viewerAction: "stashes" },
-    { keys: "Ctrl+P", action: "Open the git command menu", viewerAction: "commands" },
     { keys: "Esc / q", action: "Close the diff viewer", viewerAction: "close" },
     { keys: "? / F1", action: "Show or close this help", viewerAction: "help" },
   ],

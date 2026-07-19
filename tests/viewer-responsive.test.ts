@@ -204,7 +204,9 @@ test("navigation footers put help first and preserve contextual escape and close
 test("help is height-bounded and every action is reachable", () => {
   const diffViewer = viewer(() => 10)
   diffViewer.handleInput("?")
-  assertBounded(diffViewer.render(50), 50, 10)
+  const firstPage = diffViewer.render(50)
+  assertBounded(firstPage, 50, 10)
+  assert.match(firstPage.join("\n"), /Ctrl\+P.*Open the Git command menu/u)
   assert.equal(diffViewer.helpOffset(), 0)
 
   diffViewer.handleInput("\x1b[6~")
