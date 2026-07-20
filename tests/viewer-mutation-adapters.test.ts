@@ -330,7 +330,7 @@ test("commit hook failure reconciles the reviewed index before reopening", async
 })
 
 test("a failing pre-commit hook that stages a file refreshes the reviewed index", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-commit-hook-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-commit-hook-"))
   try {
     runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     runRealGit(root, ["config", "user.email", "tests@example.com"])
@@ -545,7 +545,7 @@ test("Escape during a pending stash mutation reconciles once and never reopens t
         rootCalls += 1
         return gitResult(`${options?.cwd ?? "/repo"}\n`)
       }
-      if (command === "stash push -u -m WIP from pi-git") {
+      if (command === "stash push -u -m WIP from pi-git-tui") {
         stashCalls += 1
         stashSignal = options?.signal
         return stashResult.promise
@@ -704,7 +704,7 @@ test("failed stash-pop reconciliation blocks mutations and r retries only the sn
 })
 
 test("stash adapter closes after side effect success when refresh fails", async () => {
-  const fake = refreshFailingPi((args) => args.join(" ") === "stash push -u -m WIP from pi-git")
+  const fake = refreshFailingPi((args) => args.join(" ") === "stash push -u -m WIP from pi-git-tui")
   const diffViewer = viewer(fake.pi)
 
   await diffViewer.stashCurrent()

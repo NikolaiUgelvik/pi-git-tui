@@ -47,7 +47,7 @@ test("discard rejects omitted entries before starting Git", async () => {
 })
 
 test("selected pathspec-magic filenames never stage or clean unrelated files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-literal-path-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-literal-path-"))
   const magicPath = ":(glob)*.txt"
   try {
     await initializeRepository(root)
@@ -73,7 +73,7 @@ test("selected pathspec-magic filenames never stage or clean unrelated files", a
 })
 
 test("discarding a mixed staged rename restores both logical paths", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-discard-rename-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-discard-rename-"))
   try {
     await initializeRepository(root)
     const selected = await mixedRenameSelection(root)
@@ -89,7 +89,7 @@ test("discarding a mixed staged rename restores both logical paths", async () =>
 })
 
 test("discarding a detected copy preserves independent source edits", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-discard-copy-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-discard-copy-"))
   try {
     const base = Array.from({ length: 10 }, (_value, index) => `line ${index}\n`).join("")
     const stagedSource = `${base}staged source line\n`
@@ -116,7 +116,7 @@ test("discarding a detected copy preserves independent source edits", async () =
 })
 
 test("discarding a stale rename snapshot reclassifies every alias against current HEAD", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-discard-stale-rename-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-discard-stale-rename-"))
   try {
     await initializeRepository(root)
     const staleSelection = await mixedRenameSelection(root)

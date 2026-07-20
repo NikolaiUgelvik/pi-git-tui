@@ -7,7 +7,7 @@ import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const workspace = mkdtempSync(join(tmpdir(), "pi-git-developer-loop-"))
+const workspace = mkdtempSync(join(tmpdir(), "pi-git-tui-developer-loop-"))
 const sampleCount = 20
 
 function percentile(values, fraction) {

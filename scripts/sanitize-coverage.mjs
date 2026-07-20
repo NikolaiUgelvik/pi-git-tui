@@ -22,6 +22,6 @@ try {
   replaceNegativeLocations(coverage)
   writeFileSync(coveragePath, `${JSON.stringify(coverage)}\n`)
 } catch (error) {
-  console.error(`pi-git coverage sanitation failed: ${error instanceof Error ? error.message : String(error)}`)
+  console.error(`pi-git-tui coverage sanitation failed: ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 }

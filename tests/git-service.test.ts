@@ -233,7 +233,7 @@ test("stash service parses list and runs stash commands", async () => {
   const { pi } = createRepoPi((args) => {
     const command = args.join(" ")
     if (command === "stash list --format=%gd%x00%s") return gitResult(readFixture("stash-list.txt"))
-    if (command === "stash push -u -m WIP from pi-git") return gitResult("Saved working directory")
+    if (command === "stash push -u -m WIP from pi-git-tui") return gitResult("Saved working directory")
     if (command === "stash apply stash@{0}") return gitResult("")
     if (command === "stash pop stash@{0}") return gitResult("")
     if (command === "stash drop stash@{0}") return gitResult("")
@@ -242,7 +242,7 @@ test("stash service parses list and runs stash commands", async () => {
 
   assert.deepEqual(await getStashes(pi, "/repo"), [
     { ref: "stash@{0}", message: "WIP on main: abcdef0 Initial commit" },
-    { ref: "stash@{1}", message: "On main: WIP from pi-git" },
+    { ref: "stash@{1}", message: "On main: WIP from pi-git-tui" },
     { ref: "stash@{2}", message: "WIP on feature-abc: 1234567 Add new feature" },
   ])
   assert.equal(await stashCurrentChanges(pi, "/repo"), "Saved working directory")

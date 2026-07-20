@@ -29,7 +29,7 @@ function record(root: string, path: string): FileRecord {
 }
 
 function createBuildFixture(): { entryUrl: string; root: string } {
-  const root = mkdtempSync(join(tmpdir(), "pi-git-build-freshness-"))
+  const root = mkdtempSync(join(tmpdir(), "pi-git-tui-build-freshness-"))
   const inputPaths = [
     ".gitattributes",
     "extensions/diff.ts",

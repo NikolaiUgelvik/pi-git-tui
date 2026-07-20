@@ -1,8 +1,8 @@
 <p>
-  <img src="assets/banner.png" alt="pi-git showing a syntax-highlighted historical diff" width="1100">
+  <img src="assets/banner.png" alt="pi-git-tui showing a syntax-highlighted historical diff" width="1100">
 </p>
 
-# Pi Git
+# Pi Git TUI
 
 A GitHub Desktop-style diff, staging, history, and commit workflow inside [Pi](https://github.com/badlogic/pi-mono).
 
@@ -12,7 +12,7 @@ Review syntax-highlighted changes, move files between the working tree and index
 
 Pi is already where the code changes happen. Reviewing those changes should not require switching to another app or reconstructing the state of the index from terminal commands.
 
-`pi-git` adds one full-screen `/diff` view with:
+`pi-git-tui` adds one full-screen `/diff` view with:
 
 - a file tree and responsive diff viewport;
 - separate, index-exact working and staged views;
@@ -25,7 +25,7 @@ Normal Git operations stay local. The model is only involved when you explicitly
 ## Install
 
 ```bash
-pi install git:github.com/NikolaiUgelvik/pi-git
+pi install git:github.com/NikolaiUgelvik/pi-git-tui
 ```
 
 Restart Pi after installation.
@@ -68,7 +68,7 @@ The diff viewport also supports half-page scrolling, fixed line-number gutters, 
 
 ## Staging and Committing
 
-The working and staged views come directly from Git. `pi-git` does not approximate one from the other, so partially staged and mixed files remain accurate.
+The working and staged views come directly from Git. `pi-git-tui` does not approximate one from the other, so partially staged and mixed files remain accurate.
 
 A typical commit flow:
 

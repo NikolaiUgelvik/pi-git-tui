@@ -51,7 +51,7 @@ function trackedSession(events: string[], options: FakeSessionOptions = {}): Fak
 }
 
 test("background session creation tolerates an active leaf missing from the persisted session", async () => {
-  const sessionDirectory = await mkdtemp(join(tmpdir(), "pi-git-stale-session-"))
+  const sessionDirectory = await mkdtemp(join(tmpdir(), "pi-git-tui-stale-session-"))
   const sessionFile = join(sessionDirectory, "active.jsonl")
   const header = {
     type: "session",

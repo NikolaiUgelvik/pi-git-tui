@@ -1,8 +1,8 @@
-# pi-git Architecture
+# pi-git-tui Architecture
 
 ## Overview
 
-`pi-git` provides the `/diff` extension command: an interactive terminal UI for browsing working-tree and commit diffs, staging and discarding changes, committing, and using branch, stash, worktree, help, and command overlays.
+`pi-git-tui` provides the `/diff` extension command: an interactive terminal UI for browsing working-tree and commit diffs, staging and discarding changes, committing, and using branch, stash, worktree, help, and command overlays.
 
 The viewer keeps rendering and overlay controllers separate from repository observation and side-effect coordination. A complete Git document is accepted atomically; mutations never own their retry path, and asynchronous completions cannot overwrite a newer cwd or document generation.
 

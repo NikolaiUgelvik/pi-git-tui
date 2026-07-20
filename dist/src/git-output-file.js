@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { runGit, throwIfGitAborted } from "./git-service.js";
 export async function withGitOutputFile(pi, cwd, args, consume, options = {}) {
-    const directory = await mkdtemp(join(tmpdir(), "pi-git-output-"));
+    const directory = await mkdtemp(join(tmpdir(), "pi-git-tui-output-"));
     const outputPath = join(directory, "git-output");
     try {
         await runGit(pi, cwd, args(outputPath), options);

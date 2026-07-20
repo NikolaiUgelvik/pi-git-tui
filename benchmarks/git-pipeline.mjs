@@ -81,10 +81,10 @@ async function git(cwd, args) {
     env: {
       ...process.env,
       GIT_CONFIG_NOSYSTEM: "1",
-      GIT_AUTHOR_NAME: "Pi Git Benchmark",
-      GIT_AUTHOR_EMAIL: "pi-git@example.invalid",
-      GIT_COMMITTER_NAME: "Pi Git Benchmark",
-      GIT_COMMITTER_EMAIL: "pi-git@example.invalid",
+      GIT_AUTHOR_NAME: "Pi Git TUI Benchmark",
+      GIT_AUTHOR_EMAIL: "pi-git-tui@example.invalid",
+      GIT_COMMITTER_NAME: "Pi Git TUI Benchmark",
+      GIT_COMMITTER_EMAIL: "pi-git-tui@example.invalid",
     },
   })
 }
@@ -308,7 +308,7 @@ function untrackedAbortTrigger() {
   }
 }
 
-const workspace = await mkdtemp(join(tmpdir(), "pi-git-pipeline-benchmark-"))
+const workspace = await mkdtemp(join(tmpdir(), "pi-git-tui-pipeline-benchmark-"))
 try {
   const output = join(workspace, "compiled")
   await compile(output)

@@ -4,7 +4,7 @@ import type { StashSummary } from "./types.js"
 
 export async function stashCurrentChanges(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  const result = await runGit(pi, root, ["stash", "push", "-u", "-m", "WIP from pi-git"], {
+  const result = await runGit(pi, root, ["stash", "push", "-u", "-m", "WIP from pi-git-tui"], {
     signal,
     timeoutClass: "mutation",
   })

@@ -40,7 +40,7 @@ test("post-stash list failure keeps prior rows, leaves loading, and r retries on
         if (listCalls === 2) return failedList.promise
         return gitResult(refreshedList)
       }
-      if (command === "stash push -u -m WIP from pi-git") {
+      if (command === "stash push -u -m WIP from pi-git-tui") {
         stashCalls += 1
         return gitResult("Stashed current changes")
       }
@@ -142,7 +142,7 @@ test("cancelling a post-stash list refresh preserves confirmed mutation feedback
             if (listCalls === 1) return gitResult("stash@{0}\0previous work\n")
             return pendingList.promise
           }
-          if (command === "stash push -u -m WIP from pi-git") {
+          if (command === "stash push -u -m WIP from pi-git-tui") {
             stashCalls += 1
             return gitResult("Stashed current changes")
           }

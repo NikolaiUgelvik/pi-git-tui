@@ -149,7 +149,7 @@ export function assertCompiledBuildIsConsistent(entryUrl) {
     }
     catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`pi-git refused to load missing or inconsistent compiled output: ${detail}. ` +
+        throw new Error(`pi-git-tui refused to load missing or inconsistent compiled output: ${detail}. ` +
             `Run "npm run build" in ${root}; use "npm run dev" to load TypeScript source during development.`, { cause: error });
     }
 }

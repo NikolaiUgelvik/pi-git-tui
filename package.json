@@ -1,5 +1,5 @@
 {
-  "name": "pi-git",
+  "name": "pi-git-tui",
   "version": "0.1.0",
   "description": "Pi extension that adds an interactive /diff git diff and commit viewer.",
   "type": "module",

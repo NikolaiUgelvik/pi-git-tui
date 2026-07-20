@@ -222,7 +222,7 @@ function measureScenario(Module, files, operation) {
   }
 }
 
-const workspace = mkdtempSync(join(tmpdir(), "pi-git-render-frames-"))
+const workspace = mkdtempSync(join(tmpdir(), "pi-git-tui-render-frames-"))
 try {
   const currentOutput = join(workspace, "current")
   const baselineRoot = join(workspace, "baseline-source")

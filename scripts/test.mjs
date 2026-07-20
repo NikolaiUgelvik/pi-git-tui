@@ -176,6 +176,6 @@ async function main() {
 try {
   process.exitCode = await main()
 } catch (error) {
-  console.error(`pi-git test runner failed: ${error instanceof Error ? error.message : String(error)}`)
+  console.error(`pi-git-tui test runner failed: ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 }

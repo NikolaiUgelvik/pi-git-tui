@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const childPath = resolve(root, "benchmarks/extension-load-child.mjs")
-const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-extension-load-"))
+const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-tui-extension-load-"))
 const agentDirectory = join(temporaryRoot, "agent")
 mkdirSync(agentDirectory)
 

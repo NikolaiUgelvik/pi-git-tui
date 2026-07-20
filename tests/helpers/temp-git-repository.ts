@@ -24,10 +24,10 @@ export async function runFixtureGit(cwd: string, args: readonly string[]): Promi
   const environment: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_CONFIG_NOSYSTEM: "1",
-    GIT_AUTHOR_NAME: "Pi Git Tests",
-    GIT_AUTHOR_EMAIL: "pi-git@example.invalid",
-    GIT_COMMITTER_NAME: "Pi Git Tests",
-    GIT_COMMITTER_EMAIL: "pi-git@example.invalid",
+    GIT_AUTHOR_NAME: "Pi Git TUI Tests",
+    GIT_AUTHOR_EMAIL: "pi-git-tui@example.invalid",
+    GIT_COMMITTER_NAME: "Pi Git TUI Tests",
+    GIT_COMMITTER_EMAIL: "pi-git-tui@example.invalid",
   }
   delete environment.GIT_DIR
   delete environment.GIT_INDEX_FILE
@@ -69,15 +69,15 @@ export async function createTempGitRepository(
   initialCommit = true,
   objectFormat?: "sha256",
 ): Promise<TemporaryGitRepository> {
-  const path = await mkdtemp(join(tmpdir(), "pi-git-status-"))
+  const path = await mkdtemp(join(tmpdir(), "pi-git-tui-status-"))
   try {
     await runFixtureGit(path, ["init", "-b", "main", ...(objectFormat ? [`--object-format=${objectFormat}`] : [])])
   } catch (error) {
     await rm(path, { recursive: true, force: true })
     throw error
   }
-  await runFixtureGit(path, ["config", "user.name", "Pi Git Tests"])
-  await runFixtureGit(path, ["config", "user.email", "pi-git@example.invalid"])
+  await runFixtureGit(path, ["config", "user.name", "Pi Git TUI Tests"])
+  await runFixtureGit(path, ["config", "user.email", "pi-git-tui@example.invalid"])
   if (initialCommit) {
     await writeRepoFile(path, "tracked.txt", "initial\n")
     await runFixtureGit(path, ["add", "tracked.txt"])

@@ -36,6 +36,6 @@ try {
   }
   if (!packaging) installHuskyHooks()
 } catch (error) {
-  console.error(`pi-git prepare failed: ${error instanceof Error ? error.message : String(error)}`)
+  console.error(`pi-git-tui prepare failed: ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 }

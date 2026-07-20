@@ -1,7 +1,7 @@
 import { compactGitOutput, requireGitRepository, runGit } from "./git-service.js";
 export async function stashCurrentChanges(pi, cwd, signal) {
     const root = await requireGitRepository(pi, cwd, signal);
-    const result = await runGit(pi, root, ["stash", "push", "-u", "-m", "WIP from pi-git"], {
+    const result = await runGit(pi, root, ["stash", "push", "-u", "-m", "WIP from pi-git-tui"], {
         signal,
         timeoutClass: "mutation",
     });

@@ -18,7 +18,7 @@ async function initializeRepository(root: string): Promise<void> {
 }
 
 test("staging a mixed file stages the remaining content instead of unstaging it", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-stage-mixed-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-stage-mixed-"))
   try {
     await initializeRepository(root)
     await writeFile(join(root, "file.txt"), "staged one\nbase two\n")
@@ -45,7 +45,7 @@ test("staging a mixed file stages the remaining content instead of unstaging it"
 })
 
 test("explicit unstage preserves working-tree edits", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-unstage-file-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-unstage-file-"))
   try {
     await initializeRepository(root)
     await writeFile(join(root, "file.txt"), "changed\n")
@@ -62,7 +62,7 @@ test("explicit unstage preserves working-tree edits", async () => {
 })
 
 test("unborn-HEAD unstage fallback preserves newer working content", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-unstage-unborn-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-unstage-unborn-"))
   try {
     runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "first.txt"), "staged\n")
@@ -79,7 +79,7 @@ test("unborn-HEAD unstage fallback preserves newer working content", async () =>
 })
 
 test("stage-all and unstage-all are deterministic in an unborn repository", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-all-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-all-"))
   try {
     runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "one.txt"), "one\n")
@@ -98,7 +98,7 @@ test("stage-all and unstage-all are deterministic in an unborn repository", asyn
 })
 
 test("rename aliases stage and unstage the full logical rename", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-rename-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-rename-"))
   try {
     await initializeRepository(root)
     await rename(join(root, "file.txt"), join(root, "renamed.txt"))

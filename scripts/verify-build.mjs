@@ -15,7 +15,9 @@ try {
   const mode = canCompile ? "reproducible" : "manifest-verified"
   console.log(`Verified ${manifest.inputs.length} inputs and ${manifest.outputs.length} ${mode} production files.`)
 } catch (error) {
-  console.error(`pi-git compiled output is missing or stale: ${error instanceof Error ? error.message : String(error)}`)
-  console.error('Run "npm run build" before installing or packaging pi-git.')
+  console.error(
+    `pi-git-tui compiled output is missing or stale: ${error instanceof Error ? error.message : String(error)}`,
+  )
+  console.error('Run "npm run build" before installing or packaging pi-git-tui.')
   process.exitCode = 1
 }

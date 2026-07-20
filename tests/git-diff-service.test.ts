@@ -90,7 +90,7 @@ test("clean working-tree loads overlap repository discovery with status", async 
 })
 
 test("a bare repository is an explicit load failure rather than a missing repository", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-bare-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-bare-"))
   try {
     const initialized = spawnSync("git", ["init", "--bare", "--quiet"], { cwd: root, encoding: "utf8" })
     assert.equal(initialized.status, 0, initialized.stderr)
@@ -119,7 +119,7 @@ test("repository detection rejects unexpected and killed failures", async () => 
 })
 
 test("oversized untracked files remain visible without an unbounded preview", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-untracked-large-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-untracked-large-"))
   try {
     runRealGit(root, ["init", "--quiet", "--initial-branch=main"])
     await writeFile(join(root, "large.txt"), "x".repeat(MAX_UNTRACKED_FILE_BYTES + 1))
@@ -137,7 +137,7 @@ test("oversized untracked files remain visible without an unbounded preview", as
 })
 
 test("a real repository with no commits loads through the unborn-HEAD path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-unborn-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-unborn-"))
   try {
     const initialized = spawnSync("git", ["init", "--quiet"], { cwd: root, encoding: "utf8" })
     assert.equal(initialized.status, 0, initialized.stderr)
@@ -156,7 +156,7 @@ test("a real repository with no commits loads through the unborn-HEAD path", asy
 })
 
 test("an unborn snapshot shows working-tree content newer than the index", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-unborn-mixed-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-unborn-mixed-"))
   try {
     const initialized = spawnSync("git", ["init", "--quiet"], { cwd: root, encoding: "utf8" })
     assert.equal(initialized.status, 0, initialized.stderr)
@@ -181,7 +181,7 @@ test("an unborn snapshot shows working-tree content newer than the index", async
 })
 
 test("partially staged, staged-only, and unstaged-only files use exact slices", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-exact-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-exact-"))
   try {
     await initializeRepository(root, {
       "mixed.txt": "base one\nbase two\n",
@@ -214,7 +214,7 @@ test("partially staged, staged-only, and unstaged-only files use exact slices", 
 })
 
 test("a staged rename and later edit remain one mixed logical file", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-rename-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-rename-"))
   try {
     await initializeRepository(root, { "old-name.txt": "line one\nline two\nline three\n" })
     runRealGit(root, ["mv", "old-name.txt", "new-name.txt"])
@@ -237,7 +237,7 @@ test("a staged rename and later edit remain one mixed logical file", async () =>
 })
 
 test("unmerged conflicts are represented and never mistaken for a clean index", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-conflict-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-conflict-"))
   try {
     await initializeRepository(root, { "conflict.txt": "base\n" })
     runRealGit(root, ["switch", "--quiet", "-c", "side"])
@@ -260,7 +260,7 @@ test("unmerged conflicts are represented and never mistaken for a clean index", 
 })
 
 test("binary files count as files without fabricated line counts", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-index-binary-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-index-binary-"))
   try {
     await initializeRepository(root, { "binary.dat": Uint8Array.from([0, 1, 2, 3]) })
     await writeFile(join(root, "binary.dat"), Uint8Array.from([0, 1, 9, 3]))
@@ -275,8 +275,8 @@ test("binary files count as files without fabricated line counts", async () => {
 })
 
 test("dirty submodules cannot be staged or discarded from the parent viewer", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-submodule-parent-"))
-  const child = await mkdtemp(join(tmpdir(), "pi-git-submodule-child-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-submodule-parent-"))
+  const child = await mkdtemp(join(tmpdir(), "pi-git-tui-submodule-child-"))
   try {
     await initializeRepository(root, { "root.txt": "root\n" })
     await initializeRepository(child, { "tracked.txt": "nested\n" })
@@ -307,8 +307,8 @@ test("dirty submodules cannot be staged or discarded from the parent viewer", as
 })
 
 test("clean submodule pointer updates can be explicitly staged and unstaged", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-submodule-stage-parent-"))
-  const child = await mkdtemp(join(tmpdir(), "pi-git-submodule-stage-child-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-submodule-stage-parent-"))
+  const child = await mkdtemp(join(tmpdir(), "pi-git-tui-submodule-stage-child-"))
   try {
     await initializeRepository(root, { "root.txt": "root\n" })
     await initializeRepository(child, { "tracked.txt": "nested\n" })
@@ -339,7 +339,7 @@ test("clean submodule pointer updates can be explicitly staged and unstaged", as
 })
 
 test("bounded historical loading exposes omitted files instead of buffering oversized patches", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-git-historical-large-"))
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-historical-large-"))
   try {
     await initializeRepository(root, { "large.txt": "small\n" })
     await writeFile(join(root, "large.txt"), "x".repeat(10 * 1024 * 1024))

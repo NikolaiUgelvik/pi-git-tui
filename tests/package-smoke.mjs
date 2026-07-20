@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-package-smoke-"))
+const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-tui-package-smoke-"))
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -333,7 +333,7 @@ try {
   mkdirSync(consumerDirectory)
   writeFileSync(
     join(consumerDirectory, "package.json"),
-    `${JSON.stringify({ name: "pi-git-package-smoke", private: true, type: "module" }, null, 2)}\n`,
+    `${JSON.stringify({ name: "pi-git-tui-package-smoke", private: true, type: "module" }, null, 2)}\n`,
   )
   runNpm(
     ["install", "--no-audit", "--no-fund", "--no-package-lock", "--legacy-peer-deps", tarballPath],
@@ -347,18 +347,18 @@ try {
       [
         "--input-type=module",
         "--eval",
-        'const extension = await import("pi-git"); process.stdout.write(JSON.stringify({ factory: typeof extension.default, shortcut: extension.getDiffShortcut("darwin") }))',
+        'const extension = await import("pi-git-tui"); process.stdout.write(JSON.stringify({ factory: typeof extension.default, shortcut: extension.getDiffShortcut("darwin") }))',
       ],
       { cwd: consumerDirectory },
     ),
   )
   assert.deepEqual(exported, { factory: "function", shortcut: "super+shift+g" })
 
-  const packageRoot = join(consumerDirectory, "node_modules/pi-git")
+  const packageRoot = join(consumerDirectory, "node_modules/pi-git-tui")
   assertInstalledContents(packageRoot)
   assertActualLocalPiInstall(packageRoot)
   await assertPackageLoads(packageRoot)
-  console.log("Packed pi-git artifact exported, registered, and invoked /diff plus its shortcut successfully.")
+  console.log("Packed pi-git-tui artifact exported, registered, and invoked /diff plus its shortcut successfully.")
 } finally {
   assert.deepEqual(directorySnapshot(join(root, "dist")), checkedDistSnapshot, "package smoke mutated checked dist")
   rmSync(temporaryRoot, { recursive: true, force: true })

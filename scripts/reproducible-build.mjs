@@ -43,7 +43,7 @@ function compareFile(root, temporaryRoot, path) {
 }
 
 export function verifyReproducibleBuild(root, compilerVersion) {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-reproducible-build-"))
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "pi-git-tui-reproducible-build-"))
   try {
     copyInputs(root, temporaryRoot)
     compile(root, temporaryRoot)

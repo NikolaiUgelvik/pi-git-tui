@@ -21,6 +21,6 @@ try {
   )
   for (const target of targets) rmSync(resolve(root, target), { recursive: true, force: true })
 } catch (error) {
-  console.error(`pi-git clean failed: ${error instanceof Error ? error.message : String(error)}`)
+  console.error(`pi-git-tui clean failed: ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
 }

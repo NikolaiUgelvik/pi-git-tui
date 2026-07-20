@@ -11,7 +11,7 @@ const distPath = resolve(root, "dist")
 const tscPath = resolve(root, "node_modules/typescript/bin/tsc")
 
 function fail(message) {
-  console.error(`pi-git build failed: ${message}`)
+  console.error(`pi-git-tui build failed: ${message}`)
   process.exitCode = 1
 }
 
