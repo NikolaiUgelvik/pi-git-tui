@@ -33,7 +33,6 @@ function createBuildFixture(): { entryUrl: string; root: string } {
   const inputPaths = [
     ".gitattributes",
     "extensions/diff.ts",
-    "package-lock.json",
     "package.json",
     "src/example.ts",
     "tsconfig.build.json",
@@ -97,6 +96,32 @@ test("rejects a manifest that self-attests the wrong compiler", () => {
     manifest.compiler = "typescript@0.0.0"
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
     assert.throws(() => assertCompiledBuildIsConsistent(fixture.entryUrl), /manifest compiler.*does not match/u)
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true })
+  }
+})
+
+test("accepts lockfile metadata rewrites when the compiler is unchanged", () => {
+  const fixture = createBuildFixture()
+  try {
+    write(
+      fixture.root,
+      "package-lock.json",
+      `${JSON.stringify(
+        {
+          lockfileVersion: 3,
+          packages: {
+            "node_modules/typescript": {
+              version: "5.9.3",
+              os: ["darwin", "linux"],
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+    assert.doesNotThrow(() => assertCompiledBuildIsConsistent(fixture.entryUrl))
   } finally {
     rmSync(fixture.root, { recursive: true, force: true })
   }

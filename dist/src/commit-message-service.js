@@ -1,4 +1,3 @@
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { stagedDiffForCommitMessage } from "./git-index-service.js";
 import { compactGitOutput, ensureGitRepository, runGit } from "./git-service.js";
 import { COMMIT_MESSAGE_TIMEOUT_MS } from "./types.js";
@@ -29,9 +28,6 @@ function cleanGeneratedCommitMessage(text) {
         .replace(/^["'`]|["'`]$/gu, "")
         .trim();
 }
-export function createBackgroundSessionManager(ctx) {
-    return SessionManager.inMemory(ctx.cwd);
-}
 function lastAssistantTextMessage(messages) {
     for (let index = messages.length - 1; index >= 0; index--) {
         const message = messages[index];
@@ -44,19 +40,46 @@ function commitMessagePrompt(diff) {
     return `Generate one concise Conventional Commit message for these staged changes.\n\nRequirements:\n- Return only the commit message.\n- Use a single line.\n- Keep it under 72 characters if possible.\n- Use an appropriate type such as feat, fix, docs, refactor, test, chore.\n\nStaged diff:\n${diff}`;
 }
 async function defaultSession(pi, ctx) {
-    if (!ctx.model) {
+    const model = ctx.model;
+    if (!model) {
         throw new Error("No model selected");
     }
-    const { session } = await createAgentSession({
-        cwd: ctx.cwd,
-        model: ctx.model,
-        thinkingLevel: pi.getThinkingLevel(),
-        modelRegistry: ctx.modelRegistry,
-        sessionManager: createBackgroundSessionManager(ctx),
-        noTools: "all",
-        tools: [],
-    });
-    return session;
+    const provider = ctx.modelRegistry.getProvider(model.provider);
+    if (!provider) {
+        throw new Error(`No provider registered for ${model.provider}`);
+    }
+    const controller = new AbortController();
+    const messages = [];
+    return {
+        abort: async () => controller.abort(),
+        dispose: () => controller.abort(),
+        messages,
+        prompt: async (message) => {
+            const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+            if (!auth.ok) {
+                throw new Error(auth.error);
+            }
+            const thinkingLevel = pi.getThinkingLevel();
+            const response = await provider
+                .streamSimple(model, {
+                messages: [
+                    {
+                        role: "user",
+                        content: [{ type: "text", text: message }],
+                        timestamp: Date.now(),
+                    },
+                ],
+            }, {
+                apiKey: auth.apiKey,
+                env: auth.env,
+                headers: auth.headers,
+                reasoning: thinkingLevel === "off" ? undefined : thinkingLevel,
+                signal: controller.signal,
+            })
+                .result();
+            messages.push(response);
+        },
+    };
 }
 class CommitMessageTimeoutError extends Error {
     constructor(timeoutMs) {

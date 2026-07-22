@@ -71,6 +71,7 @@ function copyGitCheckout(name = "git-checkout") {
   }
   for (const file of [
     ".gitattributes",
+    "LICENSE",
     "README.md",
     "package-lock.json",
     "package.json",
@@ -138,6 +139,7 @@ function assertGitInstallSemantics() {
   const installArgs = ["install", "--omit=dev", "--no-audit", "--no-fund"]
   runNpm(installArgs, checkout)
   assert(!existsSync(join(checkout, "node_modules/typescript")), "production git install included TypeScript")
+  assertActualFreshPiLoad(checkout)
 
   const extensionPath = join(checkout, "dist/src/extension.js")
   const originalExtension = readFileSync(extensionPath, "utf8")
@@ -204,7 +206,7 @@ function assertDirectoriesEqual(left, right) {
 }
 
 function assertProductionPath(file) {
-  const expectedRootFile = file === "package.json" || file === "README.md"
+  const expectedRootFile = file === "package.json" || file === "README.md" || file === "LICENSE"
   assert(expectedRootFile || file.startsWith("assets/") || file.startsWith("dist/"), `unexpected file: ${file}`)
   assert(!file.startsWith("dist/tests/"), `production build emitted a test: ${file}`)
 }
@@ -221,6 +223,7 @@ function assertInstalledContents(packageRoot) {
   const files = collectRelativeFiles(packageRoot)
   assert(files.includes("package.json"), "installed tarball is missing package.json")
   assert(files.includes("README.md"), "installed tarball is missing README.md")
+  assert(files.includes("LICENSE"), "installed tarball is missing the Apache 2.0 license")
   assert(files.includes("assets/banner.png"), "installed tarball is missing its README banner")
   assert(files.includes("dist/build-manifest.json"), "installed tarball is missing its build manifest")
   assert(files.includes("dist/extensions/diff.js"), "installed tarball is missing the emitted Pi entry")
@@ -251,6 +254,25 @@ function linkHostPeers(consumerDirectory) {
   }
 }
 
+function assertActualFreshPiLoad(packageRoot) {
+  const project = join(temporaryRoot, "pi-fresh-load")
+  const agentDirectory = join(temporaryRoot, "pi-fresh-agent")
+  mkdirSync(project)
+  const piCommand = join(root, "node_modules", ".bin", process.platform === "win32" ? "pi.cmd" : "pi")
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agentDirectory, PI_OFFLINE: "1" }
+  run(piCommand, ["install", packageRoot], { cwd: project, env })
+  const load = spawnSync(piCommand, ["--offline", "--help"], {
+    cwd: project,
+    encoding: "utf8",
+    env,
+    maxBuffer: 10 * 1024 * 1024,
+  })
+  if (load.error) throw load.error
+  const output = `${load.stdout}\n${load.stderr}`
+  assert.equal(load.status, 0, `fresh Pi failed to load the production git checkout:\n${output}`)
+  assert.doesNotMatch(output, /Warning:|Failed to load extension|compiled output is missing or stale/u)
+}
+
 function assertActualLocalPiInstall(packageRoot) {
   const project = join(temporaryRoot, "pi-local-install")
   mkdirSync(project)
@@ -273,9 +295,18 @@ function assertActualLocalPiInstall(packageRoot) {
 async function assertPackageLoads(packageRoot) {
   const packageJson = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"))
   assert.deepEqual(packageJson.files, ["dist", "assets", "README.md"])
-  assert.deepEqual(packageJson.pi?.extensions, ["./dist/extensions/diff.js"])
-  assert.equal(packageJson.exports?.["."]?.import, "./dist/extensions/diff.js")
-  assert.equal(packageJson.exports?.["."]?.types, "./dist/extensions/diff.d.ts")
+  assert.deepEqual(packageJson.pi.extensions, ["./dist/extensions/diff.js"])
+  assert.equal(
+    packageJson.pi.image,
+    "https://raw.githubusercontent.com/NikolaiUgelvik/pi-git-tui/main/assets/banner.png",
+  )
+  assert.equal(packageJson.license, "Apache-2.0")
+  assert.equal(packageJson.engines.node, ">=22.19.0")
+  assert.equal(packageJson.repository.url, "git+https://github.com/NikolaiUgelvik/pi-git-tui.git")
+  assert.equal(packageJson.homepage, "https://github.com/NikolaiUgelvik/pi-git-tui#readme")
+  assert.equal(packageJson.bugs.url, "https://github.com/NikolaiUgelvik/pi-git-tui/issues")
+  assert.equal(packageJson.exports["."].import, "./dist/extensions/diff.js")
+  assert.equal(packageJson.exports["."].types, "./dist/extensions/diff.d.ts")
 
   const entryPath = join(packageRoot, packageJson.pi.extensions[0])
   const agentDirectory = join(temporaryRoot, "agent")

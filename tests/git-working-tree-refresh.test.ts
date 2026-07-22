@@ -77,7 +77,7 @@ test("an unchanged clean status refresh reuses patch and file identities with on
     assert.equal(result.document.subtitle, current.subtitle)
     assert.equal(tracker.calls.length, 1)
     assert.equal(tracker.calls[0]?.args[0], "status")
-    assert.equal(tracker.calls[0]?.cwd, repo.path)
+    assert.equal(tracker.calls[0]?.cwd, current.revision?.root)
   } finally {
     await repo.cleanup()
   }
@@ -98,7 +98,7 @@ test("status-only refresh updates upstream metadata without rebuilding files", a
     const result = await refreshWorkingTreeDocument(tracker.pi, context(repo.path), current, "status")
 
     assert.equal(result.reason, "status-unchanged")
-    assert.equal(result.document.subtitle, `${repo.path} (main ↓1)`)
+    assert.equal(result.document.subtitle, `${current.revision?.root} (main ↓1)`)
     assert.equal(result.document.files, current.files)
     assert.equal(tracker.calls.length, 1)
     assert.equal(tracker.calls[0]?.args[0], "status")

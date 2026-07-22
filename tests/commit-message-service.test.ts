@@ -1,10 +1,7 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { createBackgroundSessionManager, generateCommitMessage } from "../src/commit-message-service.js"
+import { generateCommitMessage } from "../src/commit-message-service.js"
 import { deferred, flushPromises } from "./helpers/deferred.js"
 
 interface FakeSession {
@@ -50,34 +47,54 @@ function trackedSession(events: string[], options: FakeSessionOptions = {}): Fak
   }
 }
 
-test("background session creation tolerates an active leaf missing from the persisted session", async () => {
-  const sessionDirectory = await mkdtemp(join(tmpdir(), "pi-git-tui-stale-session-"))
-  const sessionFile = join(sessionDirectory, "active.jsonl")
-  const header = {
-    type: "session",
-    version: 3,
-    id: "active-session",
-    timestamp: "2026-01-01T00:00:00.000Z",
-    cwd: "/repo",
+test("default generation uses the active provider and resolved authentication", async () => {
+  const model = { id: "test-model", provider: "test-provider" }
+  const calls: Array<{ context: unknown; model: unknown; options: Record<string, unknown> }> = []
+  const provider = {
+    streamSimple(activeModel: unknown, activeContext: unknown, options: Record<string, unknown>) {
+      calls.push({ context: activeContext, model: activeModel, options })
+      return { result: async () => assistantMessage("feat: use active provider") }
+    },
   }
-  await writeFile(sessionFile, `${JSON.stringify(header)}\n`)
-
-  const staleContext = {
+  const activeContext = {
     cwd: "/repo",
-    sessionManager: {
-      getLeafId: () => "a9ef319d",
-      getSessionDir: () => sessionDirectory,
-      getSessionFile: () => sessionFile,
+    model,
+    modelRegistry: {
+      getApiKeyAndHeaders: async () => ({
+        ok: true,
+        apiKey: "test-key",
+        env: { TEST_PROVIDER: "enabled" },
+        headers: { "x-test": "yes" },
+      }),
+      getProvider: () => provider,
     },
   } as unknown as ExtensionContext
+  const activePi = { getThinkingLevel: () => "low" } as unknown as ExtensionAPI
 
-  try {
-    const sessionManager = createBackgroundSessionManager(staleContext)
-    assert.equal(sessionManager.isPersisted(), false)
-    assert.equal(sessionManager.getCwd(), "/repo")
-  } finally {
-    await rm(sessionDirectory, { recursive: true, force: true })
+  const message = await generateCommitMessage(activePi, activeContext, {
+    loadStagedDiff: async () => "diff --git a/file b/file",
+  })
+
+  assert.equal(message, "feat: use active provider")
+  assert.equal(calls.length, 1)
+  const call = calls[0]
+  assert.ok(call)
+  assert.equal(call.model, model)
+  const requestContext = call.context as {
+    messages: Array<{ content: Array<{ text: string; type: string }>; role: string; timestamp: number }>
   }
+  const requestMessage = requestContext.messages[0]
+  assert.ok(requestMessage)
+  const requestContent = requestMessage.content[0]
+  assert.ok(requestContent)
+  assert.equal(requestMessage.role, "user")
+  assert.equal(requestContent.type, "text")
+  assert.match(requestContent.text, /diff --git a\/file b\/file/u)
+  assert.equal(typeof requestMessage.timestamp, "number")
+  assert.equal(call.options.apiKey, "test-key")
+  assert.equal(call.options.reasoning, "low")
+  assert.deepEqual(call.options.env, { TEST_PROVIDER: "enabled" })
+  assert.deepEqual(call.options.headers, { "x-test": "yes" })
 })
 
 function pendingSessionGeneration(controller: AbortController) {

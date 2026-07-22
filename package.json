@@ -1,7 +1,7 @@
 {
   "name": "pi-git-tui",
   "version": "0.1.0",
-  "description": "Pi extension that adds an interactive /diff git diff and commit viewer.",
+  "description": "Interactive Git diff, staging, history, and commit TUI for Pi.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -9,7 +9,22 @@
     "git",
     "diff"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Nikolai Ugelvik",
+    "email": "nikolaiu@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NikolaiUgelvik/pi-git-tui.git"
+  },
+  "homepage": "https://github.com/NikolaiUgelvik/pi-git-tui#readme",
+  "bugs": {
+    "url": "https://github.com/NikolaiUgelvik/pi-git-tui/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "main": "./dist/extensions/diff.js",
   "types": "./dist/extensions/diff.d.ts",
   "exports": {
@@ -26,7 +41,8 @@
   "pi": {
     "extensions": [
       "./dist/extensions/diff.js"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/NikolaiUgelvik/pi-git-tui/main/assets/banner.png"
   },
   "scripts": {
     "clean": "node ./scripts/clean.mjs",
@@ -63,13 +79,13 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "@earendil-works/pi-coding-agent": "^0.78.0",
-    "@earendil-works/pi-tui": "^0.78.0",
-    "@types/node": "^24.0.0",
+    "@biomejs/biome": "^2.5.5",
+    "@earendil-works/pi-coding-agent": "^0.81.1",
+    "@earendil-works/pi-tui": "^0.81.1",
+    "@types/node": "^26.1.1",
     "c8": "^12.0.0",
-    "fallow": "^2.88.0",
+    "fallow": "^3.7.1",
     "husky": "^9.1.7",
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.2"
   }
 }

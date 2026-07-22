@@ -17,13 +17,7 @@ interface BuildManifest {
 }
 
 const BUILD_MANIFEST_PATH = "dist/build-manifest.json"
-const BUILD_INPUT_FILES = [
-  ".gitattributes",
-  "package-lock.json",
-  "package.json",
-  "tsconfig.json",
-  "tsconfig.build.json",
-]
+const BUILD_INPUT_FILES = [".gitattributes", "package.json", "tsconfig.json", "tsconfig.build.json"]
 const BUILD_INPUT_DIRECTORIES = [
   { directory: "extensions", suffix: ".ts" },
   { directory: "scripts", suffix: ".mjs" },

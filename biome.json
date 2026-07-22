@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -45,8 +45,9 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
-      "nursery": {
+      "preset": "recommended",
+      "nursery": {},
+      "style": {
         "noExcessiveLinesPerFile": {
           "level": "error",
           "options": {
@@ -61,7 +62,8 @@
       "includes": ["tests/**/*.ts"],
       "linter": {
         "rules": {
-          "nursery": {
+          "nursery": {},
+          "style": {
             "noExcessiveLinesPerFile": "off"
           }
         }
@@ -72,7 +74,7 @@
     "enabled": true,
     "actions": {
       "source": {
-        "recommended": true
+        "preset": "recommended"
       }
     }
   }
