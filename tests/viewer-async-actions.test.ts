@@ -10,7 +10,7 @@ import {
   runFixtureGit,
   writeRepoFile,
 } from "./helpers/temp-git-repository.js"
-import { testTheme } from "./helpers/viewer.js"
+import { testTheme, testViewerOptions } from "./helpers/viewer.js"
 
 interface Deferred<T> {
   readonly promise: Promise<T>
@@ -122,6 +122,7 @@ function createViewer(pi: ExtensionAPI, cwd: string, document: DiffDocument): As
     () => {},
     () => {},
     () => 80,
+    testViewerOptions,
   )
 }
 

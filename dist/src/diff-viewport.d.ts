@@ -6,6 +6,7 @@ export interface DiffViewportInput {
     readonly height: number;
     readonly verticalOffset: number;
     readonly horizontalOffset: number;
+    readonly wrap?: boolean;
     readonly theme: Theme;
 }
 export interface DiffViewportResult {

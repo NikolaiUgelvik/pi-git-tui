@@ -1,6 +1,7 @@
 import { contextForDocumentLoad, loadDiffDocument } from "./diff-document-loader.js";
 import { failureDetails } from "./failure-details.js";
 import { refreshWorkingTreeDocument } from "./git-working-tree-refresh.js";
+import { copyPluginSettings } from "./plugin-settings.js";
 import { viewerActionAvailability } from "./viewer-action-policy.js";
 import { ViewerDocumentState, } from "./viewer-document-state.js";
 import { ViewerOperationCoordinator, } from "./viewer-operation-coordinator.js";
@@ -15,16 +16,22 @@ export class DiffViewerOperationBase {
     loadingMessage;
     operationCoordinator;
     pi;
+    pluginSettings;
     requestRender;
+    settingsListTheme;
     statusMessage;
     theme;
-    constructor(pi, ctx, theme, initialDocument, done, requestRender, getTerminalRows) {
+    savePluginSettings;
+    constructor(pi, ctx, theme, initialDocument, done, requestRender, getTerminalRows, viewerOptions) {
         this.pi = pi;
         this.ctx = ctx;
         this.theme = theme;
         this.done = done;
         this.requestRender = requestRender;
         this.getTerminalRows = getTerminalRows;
+        this.pluginSettings = copyPluginSettings(viewerOptions.settings);
+        this.settingsListTheme = viewerOptions.settingsListTheme;
+        this.savePluginSettings = viewerOptions.saveSettings;
         this.documentState = new ViewerDocumentState(ctx.cwd, initialDocument);
         this.operationCoordinator = new ViewerOperationCoordinator({
             currentContext: () => ({ cwd: this.activePath(), generation: this.documentState.generation }),
@@ -61,6 +68,14 @@ export class DiffViewerOperationBase {
     }
     set selectedFileIndex(value) {
         this.documentState.selectedFileIndex = value;
+    }
+    applyPluginSettings(settings) {
+        this.pluginSettings = copyPluginSettings(settings);
+        this.diffColumn = 0;
+        this.diffScroll = 0;
+    }
+    persistPluginSettings(settings) {
+        return this.savePluginSettings(settings);
     }
     activePath() {
         return this.documentState.activeCwd;

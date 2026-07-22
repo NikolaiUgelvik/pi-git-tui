@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { SettingsListTheme } from "@earendil-works/pi-tui";
 import { type FailureDetails } from "./failure-details.js";
+import { type PluginSettings } from "./plugin-settings.js";
 import type { DiffDocument, DiffFile, DiffSlice, WorkingTreeRefreshScope, WorkingTreeView } from "./types.js";
 import { type ViewerAction } from "./viewer-action-policy.js";
 import { type DiffLoadRequest, type DocumentSelection, ViewerDocumentState, type ViewerInitialDocument } from "./viewer-document-state.js";
@@ -9,6 +11,11 @@ export interface DocumentLoadOptions {
     successMessage?: string;
     selection?: DocumentSelection;
     recordFailure?: boolean;
+}
+export interface DiffViewerOptions {
+    readonly settings: PluginSettings;
+    readonly settingsListTheme: () => SettingsListTheme;
+    readonly saveSettings: (settings: PluginSettings) => Promise<void>;
 }
 export declare class DiffViewerOperationBase {
     protected readonly ctx: ExtensionContext;
@@ -21,10 +28,13 @@ export declare class DiffViewerOperationBase {
     protected loadingMessage: string | undefined;
     protected readonly operationCoordinator: ViewerOperationCoordinator;
     protected readonly pi: ExtensionAPI;
+    protected pluginSettings: PluginSettings;
     protected readonly requestRender: () => void;
+    protected readonly settingsListTheme: () => SettingsListTheme;
     protected statusMessage: string | undefined;
     protected readonly theme: Theme;
-    constructor(pi: ExtensionAPI, ctx: ExtensionContext, theme: Theme, initialDocument: DiffDocument | ViewerInitialDocument, done: () => void, requestRender: () => void, getTerminalRows: () => number);
+    private readonly savePluginSettings;
+    constructor(pi: ExtensionAPI, ctx: ExtensionContext, theme: Theme, initialDocument: DiffDocument | ViewerInitialDocument, done: () => void, requestRender: () => void, getTerminalRows: () => number, viewerOptions: DiffViewerOptions);
     protected get diffColumn(): number;
     protected set diffColumn(value: number);
     protected get diffScroll(): number;
@@ -35,6 +45,8 @@ export declare class DiffViewerOperationBase {
     protected get workingTreeView(): WorkingTreeView;
     protected get selectedFileIndex(): number;
     protected set selectedFileIndex(value: number);
+    protected applyPluginSettings(settings: PluginSettings): void;
+    protected persistPluginSettings(settings: PluginSettings): Promise<void>;
     protected activePath(): string;
     protected activeContext(signal?: AbortSignal | undefined): ExtensionContext;
     protected operationSnapshot(): OperationSnapshot;

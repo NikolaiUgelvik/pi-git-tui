@@ -1,7 +1,9 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
+import type { SettingsListTheme } from "@earendil-works/pi-tui"
 import { contextForDocumentLoad, loadDiffDocument } from "./diff-document-loader.js"
 import { type FailureDetails, failureDetails } from "./failure-details.js"
 import { refreshWorkingTreeDocument } from "./git-working-tree-refresh.js"
+import { copyPluginSettings, type PluginSettings } from "./plugin-settings.js"
 import type { DiffDocument, DiffFile, DiffSlice, WorkingTreeRefreshScope, WorkingTreeView } from "./types.js"
 import { type ViewerAction, viewerActionAvailability } from "./viewer-action-policy.js"
 import {
@@ -27,6 +29,12 @@ export interface DocumentLoadOptions {
   recordFailure?: boolean
 }
 
+export interface DiffViewerOptions {
+  readonly settings: PluginSettings
+  readonly settingsListTheme: () => SettingsListTheme
+  readonly saveSettings: (settings: PluginSettings) => Promise<void>
+}
+
 export class DiffViewerOperationBase {
   protected readonly ctx: ExtensionContext
   protected readonly documentState: ViewerDocumentState
@@ -38,9 +46,12 @@ export class DiffViewerOperationBase {
   protected loadingMessage: string | undefined
   protected readonly operationCoordinator: ViewerOperationCoordinator
   protected readonly pi: ExtensionAPI
+  protected pluginSettings: PluginSettings
   protected readonly requestRender: () => void
+  protected readonly settingsListTheme: () => SettingsListTheme
   protected statusMessage: string | undefined
   protected readonly theme: Theme
+  private readonly savePluginSettings: (settings: PluginSettings) => Promise<void>
 
   constructor(
     pi: ExtensionAPI,
@@ -50,6 +61,7 @@ export class DiffViewerOperationBase {
     done: () => void,
     requestRender: () => void,
     getTerminalRows: () => number,
+    viewerOptions: DiffViewerOptions,
   ) {
     this.pi = pi
     this.ctx = ctx
@@ -57,6 +69,9 @@ export class DiffViewerOperationBase {
     this.done = done
     this.requestRender = requestRender
     this.getTerminalRows = getTerminalRows
+    this.pluginSettings = copyPluginSettings(viewerOptions.settings)
+    this.settingsListTheme = viewerOptions.settingsListTheme
+    this.savePluginSettings = viewerOptions.saveSettings
     this.documentState = new ViewerDocumentState(ctx.cwd, initialDocument)
     this.operationCoordinator = new ViewerOperationCoordinator({
       currentContext: () => ({ cwd: this.activePath(), generation: this.documentState.generation }),
@@ -103,6 +118,16 @@ export class DiffViewerOperationBase {
 
   protected set selectedFileIndex(value: number) {
     this.documentState.selectedFileIndex = value
+  }
+
+  protected applyPluginSettings(settings: PluginSettings): void {
+    this.pluginSettings = copyPluginSettings(settings)
+    this.diffColumn = 0
+    this.diffScroll = 0
+  }
+
+  protected persistPluginSettings(settings: PluginSettings): Promise<void> {
+    return this.savePluginSettings(settings)
   }
 
   protected activePath(): string {

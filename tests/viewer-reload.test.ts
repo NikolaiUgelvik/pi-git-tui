@@ -11,6 +11,7 @@ import {
   flushViewerWork,
   gitResult,
   testTheme,
+  testViewerOptions,
   waitForViewerIdle,
   workingDocument,
   workingSnapshotResult,
@@ -188,6 +189,7 @@ test("manual reload preserves active panel and selected path through a rename", 
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
   viewer.handleInput("\x1b[B")
   viewer.handleInput("\t")
@@ -234,6 +236,7 @@ test("r reloads the active historical commit rather than the working tree", asyn
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("r")
@@ -288,6 +291,7 @@ test("r retries a failed historical selection instead of reloading the previous 
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("c")
@@ -337,6 +341,7 @@ test("a permanent historical-load failure can reopen history or be abandoned wit
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("c")
@@ -382,6 +387,7 @@ test("failed manual reload retains the last complete document and exposes full s
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("r")
@@ -408,6 +414,7 @@ test("full failure details remain vertically reachable", async () => {
     () => {},
     () => {},
     () => 12,
+    testViewerOptions,
   )
 
   viewer.handleInput("r")
@@ -439,6 +446,7 @@ test("reload progress is neutral and only completion renders a check mark", asyn
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("r")

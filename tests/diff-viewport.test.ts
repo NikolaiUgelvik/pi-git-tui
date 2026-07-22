@@ -2,7 +2,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type { Theme } from "@earendil-works/pi-coding-agent"
 import { visibleWidth } from "@earendil-works/pi-tui"
-import { prepareDiffPresentation } from "../src/diff-presentation.js"
+import type { StyledColumns } from "../src/ansi-segments.js"
+import { type PreparedDiffDisplay, prepareDiffPresentation } from "../src/diff-presentation.js"
 import type { SyntaxHighlighting } from "../src/diff-syntax.js"
 import { renderDiffViewport } from "../src/diff-viewport.js"
 import type { DiffFile } from "../src/types.js"
@@ -21,6 +22,18 @@ function file(lines: string[], path = "x.ts"): DiffFile {
   return { path, status: "modified", stageState: "unstaged", lines }
 }
 
+function preparedDisplay(content: StyledColumns): PreparedDiffDisplay {
+  const gutter: StyledColumns = Object.freeze({ plainText: "", width: 0, weightBytes: 0 })
+  return {
+    rows: [{ semantic: {} as never, gutter, content }],
+    gutterWidth: 0,
+    maxContentWidth: content.width,
+    weightBytes: content.weightBytes,
+    mode: "plain",
+    highlighterCalls: 0,
+  }
+}
+
 function viewport(
   diffFile: DiffFile,
   options: Partial<{
@@ -28,6 +41,7 @@ function viewport(
     height: number
     verticalOffset: number
     horizontalOffset: number
+    wrap: boolean
     theme: Theme
   }> = {},
 ) {
@@ -38,6 +52,7 @@ function viewport(
     height: options.height ?? 2,
     verticalOffset: options.verticalOffset ?? 0,
     horizontalOffset: options.horizontalOffset ?? 0,
+    wrap: options.wrap ?? false,
     theme,
   })
 }
@@ -56,6 +71,96 @@ test("horizontal offsets preserve a fixed styled line-number gutter", () => {
   assert.equal(last.horizontalOffset, last.maxHorizontalOffset)
   assert.notEqual(first.lines[1], middle.lines[1])
   assert.match(middle.lines[1] ?? "", sgr("[^m]*34[^m]*m"))
+})
+
+test("wrapped diff rows keep blank continuation gutters and hard-wrap long words", () => {
+  const text = "const abcdefghijklmnopqrstuvwxyz = true"
+  const result = viewport(file(["@@ -1 +1 @@", `+${text}`]), {
+    width: 14,
+    height: 10,
+    horizontalOffset: 999,
+    wrap: true,
+  })
+  const lines = result.lines.map(plain)
+  const firstCodeRow = lines.findIndex((line) => line.startsWith("+1 │ "))
+
+  assert.ok(firstCodeRow >= 0)
+  assert.equal(lines[firstCodeRow]?.slice(0, 5), "+1 │ ")
+  assert.equal(lines[firstCodeRow + 1]?.slice(0, 5), "     ")
+  assert.deepEqual(
+    lines.slice(firstCodeRow, firstCodeRow + 5).map((line) => line.slice(result.gutterWidth).trimEnd()),
+    ["const", "abcdefghi", "jklmnopqr", "stuvwxyz", "= true"],
+  )
+  assert.equal(result.horizontalOffset, 0)
+  assert.equal(result.maxHorizontalOffset, 0)
+  assert.equal(result.horizontallyScrollable, false)
+  for (const line of result.lines) assert.equal(visibleWidth(line), 14)
+})
+
+test("wrapped diff rows prefer word boundaries and preserve whitespace", () => {
+  const result = viewport(file(["@@ -1 +1 @@", "+alpha beta gamma"]), {
+    width: 13,
+    height: 10,
+    wrap: true,
+  })
+  const lines = result.lines.map(plain)
+  const firstCodeRow = lines.findIndex((line) => line.startsWith("+1 │ "))
+  const content = lines.slice(firstCodeRow, firstCodeRow + 3).map((line) => line.slice(result.gutterWidth))
+
+  assert.equal(result.contentWidth, 8)
+  assert.deepEqual(content, ["alpha   ", "beta    ", "gamma   "])
+})
+
+test("wrapped viewport scrolling uses visual rows and reserves its scrollbar", () => {
+  const result = viewport(file(["@@ -1 +1 @@", "+abcdefghijklmnopqrstuvwxyz"]), {
+    width: 12,
+    height: 2,
+    verticalOffset: 999,
+    wrap: true,
+  })
+
+  assert.ok(result.maxVerticalOffset > 0)
+  assert.equal(result.verticalOffset, result.maxVerticalOffset)
+  assert.equal(result.contentWidth, 6)
+  assert.match(plain(result.lines[0] ?? ""), /[│┃]$/u)
+  assert.equal(visibleWidth(result.lines[0] ?? ""), 12)
+})
+
+test("wrapped viewport lazily renders a maximum-sized line at one content column", () => {
+  const text = "x ".repeat(1024 * 1024)
+  const content: StyledColumns = Object.freeze({ plainText: text, width: text.length, weightBytes: text.length })
+
+  const result = renderDiffViewport({
+    display: preparedDisplay(content),
+    width: 2,
+    height: 2,
+    verticalOffset: text.length,
+    horizontalOffset: 0,
+    wrap: true,
+    theme: ansiTheme,
+  })
+
+  assert.equal(result.contentWidth, 1)
+  assert.equal(result.maxVerticalOffset, text.length - 2)
+  assert.equal(result.lines.length, 2)
+})
+
+test("wrapped scrollbar probing keeps the full width when content fits exactly", () => {
+  const content: StyledColumns = Object.freeze({ plainText: "ab", width: 2, weightBytes: 2 })
+
+  const result = renderDiffViewport({
+    display: preparedDisplay(content),
+    width: 2,
+    height: 1,
+    verticalOffset: 0,
+    horizontalOffset: 0,
+    wrap: true,
+    theme: ansiTheme,
+  })
+
+  assert.equal(result.contentWidth, 2)
+  assert.equal(result.maxVerticalOffset, 0)
+  assert.equal(plain(result.lines[0] ?? ""), "  ")
 })
 
 test("hunks and summaries reserve the same blank gutter region", () => {

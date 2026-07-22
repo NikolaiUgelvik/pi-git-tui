@@ -8,7 +8,7 @@ The viewer keeps rendering and overlay controllers separate from repository obse
 
 ## Runtime flow
 
-1. `src/extension.ts` registers `/diff` and loads an explicit initial result.
+1. `src/extension.ts` registers `/diff`, loads global plugin settings, and loads an explicit initial result.
 2. A successful load supplies a complete `DiffDocument`. A failed load supplies a `ViewerInitialDocument` failure; it is not converted into a clean document.
 3. `ViewerDocumentState` owns the active cwd, accepted document generation, current load request, selected logical path aliases, vertical and horizontal diff positions, last complete document, and load failure.
 4. `ViewerOperationCoordinator` serializes foreground loads and mutations. Every operation captures its id, cwd, and document generation.
@@ -118,14 +118,16 @@ The stash mutation is never retained for retry.
 
 All overlay controllers use `src/overlay-frame.ts`, while `viewer-overlay-base.ts` uses the same measured rectangle when merging. `ViewerOverlayCoordinator` selects one authoritative feature overlay for focus, help, rendering, input, opening, and lifecycle; controllers register adapters instead of rebuilding priority through inheritance hooks. Overlay width and height are capped before rows are built, compact force-push confirmation prioritizes the resolved destination and ref updates, and defensive merging cannot append beyond the base frame. Help wraps entries into physical display rows before `HelpOverlayState` paginates them, keeping complete descriptions reachable at narrow widths.
 
-`src/diff-viewport.ts` owns structured diff rows, a fixed line-number gutter, vertical scrollbar reservation, and the independently clamped horizontal column. Only the content region moves. `sliceStyledColumns()` normalizes tabs, slices by grapheme and terminal cell, replays and closes ANSI state, and substitutes blank cells when a boundary crosses a wide grapheme. Left/Right move four cells and Shift+Left/Right move sixteen; the Diff title reports the active column and overflow direction.
+`src/diff-viewport.ts` owns structured diff rows, a fixed line-number gutter, vertical scrollbar reservation, word-aware wrapping, and the independently clamped horizontal column. Wrapped content prefers whitespace boundaries, falls back to hard wrapping for overlong tokens, and is paginated as visual rows with blank continuation gutters. `src/ansi-column-wrap.ts` stores semantic-row plans with sparse checkpoints and materializes only visible segments, so even maximum-sized one-column lines remain memory-bounded. A viewport-capped full-width probe decides scrollbar reservation before the active-width layout is built, avoiding two whole-diff layouts. When wrapping is disabled, only the content region moves. `sliceStyledColumns()` normalizes tabs, slices by grapheme and terminal cell, replays and closes ANSI state, and substitutes blank cells when a boundary crosses a wide grapheme. Left/Right move four cells and Shift+Left/Right move sixteen; the Diff title reports either wrapping or the active column and overflow direction.
+
+`src/plugin-settings.ts` owns the global `pi-git-tui.json` format and atomic persistence under Pi's agent directory. Missing settings use wrapping by default; malformed settings produce a warning and retain that safe default. `DiffSettingsController` keeps an unsaved draft behind the settings overlay, and only Ctrl+S persists and applies it to the active viewer.
 
 ## Module groups
 
 - **Execution and snapshots**: `git-service.ts`, `git-status.ts`, `git-diff-service.ts`, `git-diff-capture.ts`, `git-untracked-service.ts`, `diff-document.ts`, `diff-document-loader.ts`, and focused Git domain services.
 - **Document and operation state**: `viewer-document-state.ts`, `viewer-operation-types.ts`, `viewer-operation-coordinator.ts`, and `viewer-operation-base.ts`.
 - **Viewer/frame**: `viewer.ts`, `viewer-core.ts`, `viewer-navigation-base.ts`, `viewer-frame.ts`, `viewer-overlay-coordinator.ts`, `responsive-geometry.ts`, `diff-viewport.ts`, `help-overlay-state.ts`, and overlay-specific viewer adapters.
-- **Overlay controllers**: commit, command, branch, stash, and worktree controllers own local filtering, selection, and rendering state; `overlay-frame.ts` provides their shared bounded chrome.
+- **Overlay controllers**: commit, command, branch, stash, worktree, and settings controllers own local filtering, selection, and rendering state; `overlay-frame.ts` provides their shared bounded chrome.
 - **Parser/display**: diff parser, tree, structured diff display, render-cache, and ANSI terminal-column modules.
 - **Build/package**: production ESM is emitted to `dist/`; a hashed manifest, reproducible-build verifier, and packed-package smoke test prevent stale compiled installs. Source development remains available through `npm run dev`.
 
@@ -148,7 +150,8 @@ Focused suites cover:
 - stash-list late resolution/rejection and warning-only recovery;
 - startup/manual reload, selection preservation, neutral loading, and full failure details;
 - width/height matrices for split, single-panel, empty, compact overlay, and scrollable-help layouts;
-- horizontal diff offsets with fixed gutters, ANSI, tabs, combining text, CJK, emoji, and resize clamping;
+- wrapped visual rows and horizontal diff offsets with fixed gutters, ANSI, tabs, combining text, CJK, emoji, and resize clamping;
+- global plugin-setting defaults, validation, persistence, overlay save, cancellation, and failure feedback;
 - large untracked fan-out, deterministic ordering, process ceilings, aggregate budgets, abort behavior, race checks, binary files, large files, missing paths, directories, and symlinks;
 - porcelain-v2 equivalence for initial, detached, renamed, conflicted, submodule, linked-worktree, and unusual-path repositories;
 - status/full command refresh escalation and cache invalidation across staged/working views;

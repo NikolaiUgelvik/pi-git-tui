@@ -9,7 +9,7 @@ import { listWorktrees, parseWorktreeList } from "../src/git-extras.js"
 import type { GitExecResult } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { HELP_ACTIONS } from "../src/viewer-help.js"
-import { workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import { testViewerOptions, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
 
 type ExecCall = { cmd: string; args: string[]; cwd: string | undefined }
 
@@ -126,6 +126,7 @@ test("worktree picker switches only the viewer active path", async () => {
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("w")

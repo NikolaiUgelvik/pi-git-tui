@@ -4,7 +4,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { DiffFile } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  testViewerOptions,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 
@@ -80,6 +87,7 @@ function generatedMessageViewer(): GeneratedMessageViewer {
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 
@@ -92,6 +100,7 @@ test("feature overlays stay closed during mutation cancellation and reconciliati
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
   const running = viewer.startMutation()
   for (const input of ["b", "s", "w", "c", "C", "\x10"]) {
@@ -144,6 +153,7 @@ test("successful commit plus failed refresh closes submission and r retries only
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("C")
@@ -247,6 +257,7 @@ test("cancelled worktree load cannot replace the active cwd when it completes la
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   viewer.handleInput("w")

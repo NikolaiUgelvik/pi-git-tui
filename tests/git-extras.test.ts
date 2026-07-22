@@ -46,6 +46,25 @@ test("discard rejects omitted entries before starting Git", async () => {
   )
 })
 
+test("discard removes an untracked file when its diff was omitted", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-git-tui-discard-untracked-"))
+  const path = "generated.png"
+  try {
+    await initializeRepository(root)
+    await writeFile(join(root, path), Buffer.alloc(256 * 1024 + 1, 0xff))
+    const document = await loadWorkingTreeDocument(realGitPi(), { cwd: root } as ExtensionContext)
+    const selected = document.working.files.find((file) => file.path === path)
+    assert.ok(selected)
+    assert.equal(selected.untracked, true)
+    assert.ok(selected.omission)
+
+    assert.equal(await discardFileChanges(realGitPi(), root, selected), `Discarded changes in ${path}`)
+    await assert.rejects(() => readFile(join(root, path)), { code: "ENOENT" })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("selected pathspec-magic filenames never stage or clean unrelated files", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-git-tui-literal-path-"))
   const magicPath = ":(glob)*.txt"

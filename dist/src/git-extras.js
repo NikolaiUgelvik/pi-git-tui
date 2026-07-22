@@ -113,8 +113,9 @@ function assertSubmoduleDiscardIsSafe(file) {
     throw new Error(`Cannot discard ${file.path}: ${detail}`);
 }
 export async function discardFileChanges(pi, cwd, file, signal) {
-    if (file.omission)
+    if (file.omission && !file.untracked) {
         throw new Error(`Cannot discard ${file.path} because its diff was omitted`);
+    }
     assertSubmoduleDiscardIsSafe(file);
     const root = await requireGitRepository(pi, cwd, signal);
     const aliases = diffFileOperationPaths(file);

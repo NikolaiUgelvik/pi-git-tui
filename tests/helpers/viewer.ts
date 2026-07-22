@@ -1,14 +1,36 @@
 import { setImmediate as tick } from "node:timers/promises"
 import type { Theme } from "@earendil-works/pi-coding-agent"
+import type { SettingsListTheme } from "@earendil-works/pi-tui"
 import { buildWorkingTreeDocument } from "../../src/diff-document.js"
 import { parseDiff } from "../../src/diff-parser-core.js"
+import { DEFAULT_PLUGIN_SETTINGS } from "../../src/plugin-settings.js"
 import type { DiffFile, GitExecResult, HeadState, WorkingTreeDocument } from "../../src/types.js"
+import type { DiffViewerOptions } from "../../src/viewer-operation-base.js"
 
 export const testTheme = {
   fg: (_color: string, text: string) => text,
   bg: (_color: string, text: string) => text,
   bold: (text: string) => text,
 } as Theme
+
+export const testSettingsListTheme: SettingsListTheme = {
+  label: (text) => text,
+  value: (text) => text,
+  description: (text) => text,
+  cursor: "> ",
+  hint: (text) => text,
+}
+
+export const testViewerOptions: DiffViewerOptions = {
+  settings: DEFAULT_PLUGIN_SETTINGS,
+  settingsListTheme: () => testSettingsListTheme,
+  saveSettings: async () => {},
+}
+
+export const testUnwrappedViewerOptions: DiffViewerOptions = {
+  ...testViewerOptions,
+  settings: { diff: { wrap: false } },
+}
 
 export function gitResult(stdout = "", code = 0, stderr = "", killed = false): GitExecResult {
   return { stdout, stderr, code, killed }

@@ -8,6 +8,7 @@ import { DiffViewerCore } from "../src/viewer-core.js"
 import { DiffViewerFrame } from "../src/viewer-frame.js"
 import { DiffViewerOverlayBase } from "../src/viewer-overlay-base.js"
 import { diffHighlightTheme, stripTestAnsi } from "./helpers/diff-highlighting.js"
+import { testViewerOptions } from "./helpers/viewer.js"
 
 class TestViewerCore extends DiffViewerCore {
   visibleDiffRows(): number {
@@ -80,6 +81,7 @@ function createViewer<T extends DiffViewerCore>(
     () => {},
     () => {},
     () => rows,
+    testViewerOptions,
   )
 }
 
@@ -100,6 +102,7 @@ function frameViewer(document: DiffDocument, viewerTheme: Theme = theme): TestFr
     () => {},
     () => {},
     () => 80,
+    testViewerOptions,
   )
 }
 

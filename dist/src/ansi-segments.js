@@ -232,26 +232,29 @@ function sliceUnicode(line, internals, start, end) {
     }
     return output;
 }
-function finishSlice(output, requestedLength, paddingPrefixValue, pad) {
+function finishSlice(output, outputLength, paddingPrefixValue, pad) {
     let result = output.active ? `${output.result}${RESET}` : output.result;
-    if (!pad || output.columns >= requestedLength)
+    if (!pad || output.columns >= outputLength)
         return result;
-    const padding = " ".repeat(requestedLength - output.columns);
+    const padding = " ".repeat(outputLength - output.columns);
     result += paddingPrefixValue ? `${paddingPrefixValue}${padding}${RESET}` : padding;
     return result;
 }
 export function slicePreparedColumns(line, startColumn, length, options = {}) {
     const start = boundedWhole(startColumn);
     const requestedLength = boundedWhole(length);
-    if (requestedLength === 0)
+    const outputLength = options.pad
+        ? Math.max(requestedLength, boundedWhole(options.padTo ?? requestedLength))
+        : requestedLength;
+    if (requestedLength === 0 && outputLength === 0)
         return "";
     const internals = preparedInternals.get(line);
     if (!internals)
-        return options.pad ? " ".repeat(requestedLength) : "";
+        return options.pad ? " ".repeat(outputLength) : "";
     const output = internals.ascii
         ? sliceAscii(line, internals, start, start + requestedLength)
         : sliceUnicode(line, internals, start, start + requestedLength);
-    return finishSlice(output, requestedLength, internals.paddingPrefix, options.pad);
+    return finishSlice(output, outputLength, internals.paddingPrefix, options.pad);
 }
 export function sliceStyledColumns(line, startColumn, length, options = {}) {
     const prepared = prepareStyledColumns(line);

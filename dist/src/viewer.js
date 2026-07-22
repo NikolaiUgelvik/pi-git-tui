@@ -2,8 +2,8 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js";
 import { fit } from "./render-text.js";
 import { HELP_TITLES, helpActionsForDocument } from "./viewer-help.js";
-import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js";
-export class DiffViewer extends DiffViewerWorktreePicker {
+import { DiffViewerSettings } from "./viewer-settings.js";
+export class DiffViewer extends DiffViewerSettings {
     activeFocusedField;
     viewerFocused = false;
     get focused() {

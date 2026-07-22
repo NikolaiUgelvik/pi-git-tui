@@ -1,7 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { type ExtensionAPI, type ExtensionContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent"
 import type { KeyId } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDocument } from "./git.js"
 import { isGitAbortError } from "./git-service.js"
+import { createPluginSettingsStore } from "./plugin-settings.js"
 import { DiffViewer } from "./viewer.js"
 import { failedViewerDocument, loadedViewerDocument, type ViewerInitialDocument } from "./viewer-document-state.js"
 
@@ -19,14 +20,19 @@ export async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): P
 
   if (ctx.signal?.aborted) return
 
+  const settingsStore = createPluginSettingsStore()
   const request = { kind: "working" as const, cwd: ctx.cwd }
-  let initialDocument: ViewerInitialDocument
-  try {
-    initialDocument = loadedViewerDocument(await loadWorkingTreeDocument(pi, ctx), request)
-  } catch (error) {
-    if (isGitAbortError(error) || ctx.signal?.aborted) return
-    initialDocument = failedViewerDocument(request, error)
-  }
+  const initialDocumentPromise = (async (): Promise<ViewerInitialDocument | undefined> => {
+    try {
+      return loadedViewerDocument(await loadWorkingTreeDocument(pi, ctx), request)
+    } catch (error) {
+      if (isGitAbortError(error) || ctx.signal?.aborted) return
+      return failedViewerDocument(request, error)
+    }
+  })()
+  const [loadedSettings, initialDocument] = await Promise.all([settingsStore.load(), initialDocumentPromise])
+  if (!initialDocument) return
+  if (loadedSettings.warning) ctx.ui.notify(loadedSettings.warning, "warning")
 
   await ctx.ui.custom<void>(
     (tui, theme, _keybindings, done) => {
@@ -38,6 +44,11 @@ export async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): P
         () => done(undefined),
         () => tui.requestRender(),
         () => tui.terminal.rows,
+        {
+          settings: loadedSettings.settings,
+          settingsListTheme: getSettingsListTheme,
+          saveSettings: (settings) => settingsStore.save(settings),
+        },
       )
       void viewer.handleInput
       void viewer.invalidate

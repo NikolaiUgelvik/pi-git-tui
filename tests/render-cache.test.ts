@@ -18,6 +18,7 @@ import {
   ViewerRenderCache,
   type ViewerRenderCacheStats,
 } from "../src/viewer-render-cache.js"
+import { testViewerOptions } from "./helpers/viewer.js"
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -108,6 +109,7 @@ function frameViewer(files: DiffFile[]): InstrumentedFrameViewer {
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 

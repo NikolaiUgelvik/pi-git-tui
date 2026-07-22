@@ -201,7 +201,9 @@ export async function discardFileChanges(
   file: DiffFile,
   signal?: AbortSignal,
 ): Promise<string> {
-  if (file.omission) throw new Error(`Cannot discard ${file.path} because its diff was omitted`)
+  if (file.omission && !file.untracked) {
+    throw new Error(`Cannot discard ${file.path} because its diff was omitted`)
+  }
   assertSubmoduleDiscardIsSafe(file)
   const root = await requireGitRepository(pi, cwd, signal)
   const aliases = diffFileOperationPaths(file)

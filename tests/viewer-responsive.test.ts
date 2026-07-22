@@ -10,7 +10,7 @@ import { StashPickerController } from "../src/stash-picker-controller.js"
 import type { DiffFile } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { WorktreePickerController } from "../src/worktree-picker-controller.js"
-import { testTheme, workingDocument } from "./helpers/viewer.js"
+import { testTheme, testUnwrappedViewerOptions, workingDocument } from "./helpers/viewer.js"
 
 const widths = [30, 50, 70, 120]
 const heights = [10, 16, 24]
@@ -47,6 +47,7 @@ function viewer(rows: () => number, files = [changedFile("first.ts"), changedFil
     () => {},
     () => {},
     rows,
+    testUnwrappedViewerOptions,
   )
 }
 
@@ -120,6 +121,7 @@ test("clean and missing documents render one full-width summary panel", () => {
       () => {},
       () => {},
       () => 16,
+      testUnwrappedViewerOptions,
     )
     const rendered = diffViewer.render(120).join("\n")
     assert.match(rendered, /Summary/u)
@@ -166,6 +168,7 @@ test("30-column footers keep one contextual action, help, and close", () => {
     () => {},
     () => {},
     () => 10,
+    testUnwrappedViewerOptions,
   )
   const historicalFooter = historical.render(30).at(-2) ?? ""
   assert.match(historicalFooter, /W tree/u)
@@ -187,6 +190,7 @@ test("navigation footers put help first and preserve contextual escape and close
     () => {},
     () => {},
     () => 16,
+    testUnwrappedViewerOptions,
   )
 
   for (const width of [80, 100, 120]) {
@@ -253,6 +257,7 @@ test("compact confirmation and commit dialogs remain inside a 30 by 10 terminal"
     () => {},
     () => {},
     () => 10,
+    testUnwrappedViewerOptions,
   )
   commitViewer.handleInput("C")
   commitViewer.handleInput("C")
@@ -260,6 +265,21 @@ test("compact confirmation and commit dialogs remain inside a 30 by 10 terminal"
   assertBounded(dialog, 30, 10)
   assert.match(dialog.join("\n"), /Commit staged changes/u)
 })
+
+interface OverlayLineController {
+  renderOverlayLines(rows: number, width: number, theme: typeof testTheme): string[]
+}
+
+function assertOverlayBounds(controller: OverlayLineController, width: number, rows: number): void {
+  const lines = controller.renderOverlayLines(rows - 2, width, testTheme)
+  assert.ok(lines.length <= rows - 2)
+  assert.ok(lines.length > 0)
+  for (const line of lines) assert.ok(visibleWidth(line) <= width)
+  if (lines.length >= 2) {
+    assert.match(lines[0] ?? "", /╭/u)
+    assert.match(lines.at(-1) ?? "", /╯/u)
+  }
+}
 
 test("every picker family renders bounded normal and compact overlays", () => {
   const callbacks = { onRequestRender: () => {}, onClose: () => {} }
@@ -296,18 +316,7 @@ test("every picker family renders bounded normal and compact overlays", () => {
   const controllers = [commit, command, branch, stash, worktree]
   for (const width of widths) {
     for (const rows of heights) {
-      for (const controller of controllers) {
-        const lines = controller.renderOverlayLines(rows - 2, width, testTheme)
-        assert.ok(lines.length <= rows - 2)
-        assert.ok(lines.length > 0)
-        for (const line of lines) {
-          assert.ok(visibleWidth(line) <= width)
-        }
-        if (lines.length >= 2) {
-          assert.match(lines[0] ?? "", /╭/u)
-          assert.match(lines.at(-1) ?? "", /╯/u)
-        }
-      }
+      for (const controller of controllers) assertOverlayBounds(controller, width, rows)
     }
   }
 })

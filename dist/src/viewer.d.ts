@@ -2,8 +2,8 @@ import { type Focusable } from "@earendil-works/pi-tui";
 import { type OverlayFrame } from "./overlay-frame.js";
 import type { HelpContext } from "./types.js";
 import { type HelpAction } from "./viewer-help.js";
-import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js";
-export declare class DiffViewer extends DiffViewerWorktreePicker implements Focusable {
+import { DiffViewerSettings } from "./viewer-settings.js";
+export declare class DiffViewer extends DiffViewerSettings implements Focusable {
     private activeFocusedField;
     private viewerFocused;
     get focused(): boolean;

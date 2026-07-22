@@ -1,6 +1,6 @@
 import type { SingleLineTextField } from "./single-line-text-field.js";
 import type { HelpContext } from "./types.js";
-export type ViewerFeatureOverlayKind = "confirmation" | "branch" | "stash" | "worktree";
+export type ViewerFeatureOverlayKind = "confirmation" | "branch" | "stash" | "worktree" | "settings";
 export interface ViewerOverlayAdapter {
     isActive: () => boolean;
     activeTextField: () => SingleLineTextField | undefined;
@@ -10,19 +10,10 @@ export interface ViewerOverlayAdapter {
     handleOpen: (data: string) => boolean;
     close: () => void;
 }
-export type ActiveOverlay = {
-    kind: "confirmation";
-    adapter: ViewerOverlayAdapter;
-} | {
-    kind: "branch";
-    adapter: ViewerOverlayAdapter;
-} | {
-    kind: "stash";
-    adapter: ViewerOverlayAdapter;
-} | {
-    kind: "worktree";
-    adapter: ViewerOverlayAdapter;
-};
+export interface ActiveOverlay {
+    readonly kind: ViewerFeatureOverlayKind;
+    readonly adapter: ViewerOverlayAdapter;
+}
 export declare class ViewerOverlayCoordinator {
     private readonly overlays;
     register(kind: ViewerFeatureOverlayKind, adapter: ViewerOverlayAdapter): void;

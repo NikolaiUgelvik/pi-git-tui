@@ -59,6 +59,7 @@ export interface PrepareStyledColumnsOptions {
 
 export interface SliceStyledColumnsOptions {
   readonly pad?: boolean
+  readonly padTo?: number
 }
 
 const preparedInternals = new WeakMap<StyledColumns, PreparedInternals>()
@@ -339,13 +340,13 @@ function sliceUnicode(line: StyledColumns, internals: PreparedInternals, start: 
 
 function finishSlice(
   output: SliceOutput,
-  requestedLength: number,
+  outputLength: number,
   paddingPrefixValue: string,
   pad: boolean | undefined,
 ): string {
   let result = output.active ? `${output.result}${RESET}` : output.result
-  if (!pad || output.columns >= requestedLength) return result
-  const padding = " ".repeat(requestedLength - output.columns)
+  if (!pad || output.columns >= outputLength) return result
+  const padding = " ".repeat(outputLength - output.columns)
   result += paddingPrefixValue ? `${paddingPrefixValue}${padding}${RESET}` : padding
   return result
 }
@@ -358,13 +359,16 @@ export function slicePreparedColumns(
 ): string {
   const start = boundedWhole(startColumn)
   const requestedLength = boundedWhole(length)
-  if (requestedLength === 0) return ""
+  const outputLength = options.pad
+    ? Math.max(requestedLength, boundedWhole(options.padTo ?? requestedLength))
+    : requestedLength
+  if (requestedLength === 0 && outputLength === 0) return ""
   const internals = preparedInternals.get(line)
-  if (!internals) return options.pad ? " ".repeat(requestedLength) : ""
+  if (!internals) return options.pad ? " ".repeat(outputLength) : ""
   const output = internals.ascii
     ? sliceAscii(line, internals, start, start + requestedLength)
     : sliceUnicode(line, internals, start, start + requestedLength)
-  return finishSlice(output, requestedLength, internals.paddingPrefix, options.pad)
+  return finishSlice(output, outputLength, internals.paddingPrefix, options.pad)
 }
 
 export function sliceStyledColumns(

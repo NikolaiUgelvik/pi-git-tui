@@ -4,7 +4,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { buildWorkingTreeDocument } from "../src/diff-document.js"
 import type { WorkingTreeDocument } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  testViewerOptions,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 
@@ -57,6 +64,7 @@ function viewer(document: WorkingTreeDocument, pi = {} as ExtensionAPI): IndexVi
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 

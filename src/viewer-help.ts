@@ -15,6 +15,7 @@ export const HELP_TITLES: Record<HelpContext, string> = {
   confirmDialog: "Confirmation help",
   stashPicker: "Stash picker help",
   worktreePicker: "Worktree picker help",
+  settings: "Settings help",
   viewer: "Diff viewer help",
 }
 
@@ -53,6 +54,12 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
   confirmDialog: [
     { keys: "Enter", action: "Confirm the named action" },
     { keys: "Esc", action: "Cancel and close the dialog" },
+    { keys: "F1", action: "Show or close this help" },
+  ],
+  settings: [
+    { keys: "Enter / Space", action: "Change the selected setting" },
+    { keys: "Ctrl+S", action: "Save settings to pi-git-tui.json and close" },
+    { keys: "Esc", action: "Discard changes and close settings" },
     { keys: "F1", action: "Show or close this help" },
   ],
   branchPicker: [
@@ -114,6 +121,7 @@ export const HELP_ACTIONS: Record<HelpContext, HelpAction[]> = {
     { keys: "b", action: "Open the branch picker", viewerAction: "branches" },
     { keys: "w", action: "Open the worktree picker", viewerAction: "worktrees" },
     { keys: "s", action: "Open stash actions", viewerAction: "stashes" },
+    { keys: "S", action: "Open Pi Git TUI settings" },
     { keys: "Esc / q", action: "Close the diff viewer", viewerAction: "close" },
     { keys: "? / F1", action: "Show or close this help", viewerAction: "help" },
   ],

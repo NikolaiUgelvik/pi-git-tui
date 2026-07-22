@@ -4,9 +4,9 @@ import { fit } from "./render-text.js"
 import type { SingleLineTextField } from "./single-line-text-field.js"
 import type { HelpContext } from "./types.js"
 import { HELP_TITLES, type HelpAction, helpActionsForDocument } from "./viewer-help.js"
-import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js"
+import { DiffViewerSettings } from "./viewer-settings.js"
 
-export class DiffViewer extends DiffViewerWorktreePicker implements Focusable {
+export class DiffViewer extends DiffViewerSettings implements Focusable {
   private activeFocusedField: SingleLineTextField | undefined
   private viewerFocused = false
 

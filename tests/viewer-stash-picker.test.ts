@@ -3,7 +3,14 @@ import { test } from "node:test"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  testViewerOptions,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 
@@ -22,6 +29,7 @@ function viewer(pi: ExtensionAPI): StashTestViewer {
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 

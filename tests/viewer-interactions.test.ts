@@ -10,6 +10,7 @@ import {
   flushViewerWork,
   gitResult,
   testTheme,
+  testViewerOptions,
   waitForViewerIdle,
   workingDocument,
   workingSnapshotResult,
@@ -150,6 +151,7 @@ function viewer(
     done,
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 
@@ -372,6 +374,7 @@ test("discard confirmation uses Enter once and Escape cancels safely", async () 
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
   cancelled.handleInput("D")
   cancelled.handleInput("\x1b")
@@ -385,6 +388,7 @@ test("discard confirmation uses Enter once and Escape cancels safely", async () 
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
   confirmed.handleInput("D")
   confirmed.handleInput("\r")

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { visibleWidth } from "@earendil-works/pi-tui"
+import { measureWrappedColumns, prepareColumnWrap } from "../src/ansi-column-wrap.js"
 import {
   normalizeDiffText,
   prepareStyledColumns,
+  type StyledColumns,
   slicePreparedColumns,
   sliceStyledColumns,
 } from "../src/ansi-segments.js"
@@ -17,6 +19,56 @@ test("column slices clamp and optionally pad ASCII", () => {
   assert.equal(sliceStyledColumns("abcdef", 20, 3), "")
   assert.equal(sliceStyledColumns("abcdef", 20, 3, { pad: true }), "   ")
   assert.equal(sliceStyledColumns("abcdef", 0, 0), "")
+})
+
+test("prepared columns wrap at whitespace and hard-wrap overlong words", () => {
+  const prepared = prepareStyledColumns("alpha beta gamma")
+  assert.ok(prepared)
+  const slices = prepareColumnWrap(prepared, 8).segments(0, Number.MAX_SAFE_INTEGER)
+
+  assert.deepEqual(slices, [
+    { start: 0, length: 6 },
+    { start: 6, length: 5 },
+    { start: 11, length: 5 },
+  ])
+  assert.deepEqual(
+    slices.map((slice) => plain(slicePreparedColumns(prepared, slice.start, slice.length))),
+    ["alpha ", "beta ", "gamma"],
+  )
+
+  const long = prepareStyledColumns("abcdefghij kl")
+  assert.ok(long)
+  assert.deepEqual(
+    prepareColumnWrap(long, 4)
+      .segments(0, Number.MAX_SAFE_INTEGER)
+      .map((slice) => plain(slicePreparedColumns(long, slice.start, slice.length))),
+    ["abcd", "efgh", "ij ", "kl"],
+  )
+
+  const empty = prepareStyledColumns("")
+  assert.ok(empty)
+  assert.deepEqual(prepareColumnWrap(empty, 8).segments(0, 1), [{ start: 0, length: 0 }])
+})
+
+test("wrapped column plans stay lazy for maximum-sized overlong tokens", () => {
+  const text = "x ".repeat(1024 * 1024)
+  const prepared: StyledColumns = Object.freeze({ plainText: text, width: text.length, weightBytes: text.length })
+  const plan = prepareColumnWrap(prepared, 1)
+
+  assert.equal(plan.segmentCount, text.length)
+  assert.deepEqual(plan.segments(text.length - 1, 2), [{ start: text.length - 1, length: 1 }])
+  assert.deepEqual(measureWrappedColumns(prepared, 80, 40), { segmentCount: 40, truncated: true })
+})
+
+test("prepared word wrapping respects wide grapheme column boundaries", () => {
+  const prepared = prepareStyledColumns("界界 alpha")
+  assert.ok(prepared)
+  const slices = prepareColumnWrap(prepared, 5).segments(0, Number.MAX_SAFE_INTEGER)
+
+  assert.deepEqual(
+    slices.map((slice) => plain(slicePreparedColumns(prepared, slice.start, slice.length))),
+    ["界界 ", "alpha"],
+  )
 })
 
 test("column slices replay and close ANSI styles across boundaries", () => {
@@ -76,7 +128,7 @@ test("decorations override syntax foreground while preserving background and clo
   })
   assert.ok(prepared)
 
-  const sliced = slicePreparedColumns(prepared, 3, 5, { pad: true })
+  const sliced = slicePreparedColumns(prepared, 3, 3, { pad: true, padTo: 5 })
   assert.equal(plain(sliced), "def  ")
   assert.equal(sliced.startsWith("\x1b[1;31;42md\x1b[0m"), true)
   assert.equal(sliced.endsWith("\x1b[37;42m  \x1b[0m"), true)

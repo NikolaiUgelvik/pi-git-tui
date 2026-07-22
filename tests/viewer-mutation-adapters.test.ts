@@ -10,7 +10,14 @@ import type { DiffFile, GitCommand, GitExecResult } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import { deferred } from "./helpers/deferred.js"
 import { realGitPi, runRealGit } from "./helpers/real-git.js"
-import { flushViewerWork, gitResult, testTheme, workingDocument, workingSnapshotResult } from "./helpers/viewer.js"
+import {
+  flushViewerWork,
+  gitResult,
+  testTheme,
+  testViewerOptions,
+  workingDocument,
+  workingSnapshotResult,
+} from "./helpers/viewer.js"
 
 type ExecOptions = { cwd?: string; signal?: AbortSignal; timeout?: number }
 
@@ -123,6 +130,7 @@ function viewer(pi: ExtensionAPI, missing = false): MutationViewer {
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 }
 
@@ -284,6 +292,7 @@ test("historical documents reject command callbacks before any mutation starts",
     () => {},
     () => {},
     () => 40,
+    testViewerOptions,
   )
 
   await diffViewer.runCommand({
@@ -355,6 +364,7 @@ test("a failing pre-commit hook that stages a file refreshes the reviewed index"
       () => {},
       () => {},
       () => 40,
+      testViewerOptions,
     )
 
     await diffViewer.commit()

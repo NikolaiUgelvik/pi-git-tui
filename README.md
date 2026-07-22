@@ -61,10 +61,25 @@ The viewer opens on working-tree changes. Press <kbd>?</kbd> or <kbd>F1</kbd> at
 | <kbd>c</kbd> | Browse the working tree and recent commits |
 | <kbd>Ctrl</kbd>+<kbd>P</kbd> | Open the Git command menu |
 | <kbd>r</kbd> | Reload the active diff or retry a failed refresh |
+| <kbd>Shift</kbd>+<kbd>S</kbd> | Open Pi Git TUI settings |
 | <kbd>?</kbd> / <kbd>F1</kbd> | Open context-sensitive help |
 | <kbd>q</kbd> / <kbd>Esc</kbd> | Close the viewer or active overlay |
 
-The diff viewport also supports half-page scrolling, fixed line-number gutters, horizontal scrolling with the arrow keys, and larger horizontal jumps with <kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd>.
+The diff viewport also supports half-page scrolling and fixed line-number gutters. Long lines wrap by default; when wrapping is disabled, use <kbd>←</kbd>/<kbd>→</kbd> to scroll horizontally and <kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> for larger jumps.
+
+## Settings
+
+Press <kbd>Shift</kbd>+<kbd>S</kbd> inside `/diff` to open the settings overlay. Use <kbd>Enter</kbd> or <kbd>Space</kbd> to change a value, <kbd>Ctrl</kbd>+<kbd>S</kbd> to save, or <kbd>Esc</kbd> to discard the draft.
+
+Settings are global and stored in `pi-git-tui.json` inside Pi's agent directory—normally `~/.pi/agent/pi-git-tui.json`, or the directory selected by `PI_CODING_AGENT_DIR`:
+
+```json
+{
+  "diff": {
+    "wrap": true
+  }
+}
+```
 
 ## Staging and Committing
 
@@ -112,7 +127,8 @@ Force-push always performs a porcelain dry run, shows the resolved destination a
 - Syntax highlighting is resolved from each file path, including renamed files.
 - Added and deleted blocks use subtle theme backgrounds while intraline changes use a stronger shade.
 - Intraline highlighting follows GitHub Desktop's behavior: equal-sized change blocks are paired by position, then the common prefix and suffix are removed to reveal one changed range.
-- Tabs, combining characters, CJK text, emoji, and wide graphemes remain safe during horizontal slicing.
+- Long content wraps at whitespace when possible, falling back to hard wrapping only for overlong tokens; continuation rows use a blank gutter.
+- Tabs, combining characters, CJK text, emoji, and wide graphemes remain safe during wrapping and horizontal slicing.
 - Unsupported, binary, malformed, and oversized inputs fall back to a bounded plain presentation.
 - Narrow terminals switch to a single focused panel instead of squeezing both panes together.
 

@@ -139,7 +139,7 @@ export interface GitExecResult {
     killed: boolean;
 }
 export type FocusPanel = "tree" | "diff";
-export type HelpContext = "viewer" | "commitPicker" | "commandMenu" | "commitDialog" | "confirmDialog" | "branchPicker" | "stashPicker" | "worktreePicker";
+export type HelpContext = "viewer" | "commitPicker" | "commandMenu" | "commitDialog" | "confirmDialog" | "branchPicker" | "stashPicker" | "worktreePicker" | "settings";
 export type ThemeColor = Parameters<Theme["fg"]>[0];
 export declare const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor>;
 export declare const GIT_COMMANDS: GitCommand[];

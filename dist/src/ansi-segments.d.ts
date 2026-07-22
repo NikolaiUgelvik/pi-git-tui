@@ -20,6 +20,7 @@ export interface PrepareStyledColumnsOptions {
 }
 export interface SliceStyledColumnsOptions {
     readonly pad?: boolean;
+    readonly padTo?: number;
 }
 export declare function normalizeDiffText(text: string): string;
 export declare function normalizeTabs(text: string): string;

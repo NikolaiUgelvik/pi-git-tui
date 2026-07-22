@@ -116,6 +116,10 @@ export class DiffViewerNavigationBase extends DiffViewerOperationBase {
         if (delta === 0) {
             return false;
         }
+        if (this.pluginSettings.diff.wrap) {
+            this.diffColumn = 0;
+            return true;
+        }
         this.diffColumn = Math.max(0, this.diffColumn + delta);
         return true;
     }

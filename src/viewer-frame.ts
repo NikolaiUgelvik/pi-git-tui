@@ -125,8 +125,9 @@ export class DiffViewerFrame extends DiffViewerCore {
     const scope = this.document.mode === "working" ? ` · ${this.workingTreeView}` : ""
     const destination = panel === "tree" ? "Diff" : "Files"
     const switchHint = single ? ` · Tab: ${destination}` : ""
+    const wrapHint = panel === "diff" && this.pluginSettings.diff.wrap ? " · wrap" : ""
     const columnHint = panel === "diff" && this.diffMaximumColumn > 0 ? this.diffColumnHint() : ""
-    const label = `${panel === "tree" ? "Files" : "Diff"}${scope}${columnHint}${switchHint}`
+    const label = `${panel === "tree" ? "Files" : "Diff"}${scope}${wrapHint}${columnHint}${switchHint}`
     const marker = focused ? "▶ " : "  "
     const text = `${marker}${label}`
     return fit(focused ? this.theme.fg("accent", this.theme.bold(text)) : this.theme.fg("muted", text), width)
@@ -323,6 +324,7 @@ export class DiffViewerFrame extends DiffViewerCore {
       height,
       verticalOffset: this.diffScroll,
       horizontalOffset: this.diffColumn,
+      wrap: this.pluginSettings.diff.wrap,
       theme: this.theme,
     })
     this.diffScroll = viewport.verticalOffset

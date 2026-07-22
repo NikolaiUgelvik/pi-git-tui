@@ -143,6 +143,18 @@ const theme = {
   bold: (text) => `\x1b[1m${text}\x1b[22m`,
 }
 
+const viewerOptions = {
+  settings: { diff: { wrap: false } },
+  settingsListTheme: () => ({
+    label: (text) => text,
+    value: (text) => text,
+    description: (text) => text,
+    cursor: "> ",
+    hint: (text) => text,
+  }),
+  saveSettings: async () => {},
+}
+
 function viewer(Module, files) {
   class BenchmarkViewer extends Module.DiffViewer {
     cacheStats() {
@@ -157,6 +169,7 @@ function viewer(Module, files) {
     () => {},
     () => {},
     () => 50,
+    viewerOptions,
   )
 }
 

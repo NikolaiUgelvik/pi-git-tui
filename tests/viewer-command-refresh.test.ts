@@ -7,6 +7,7 @@ import { GIT_COMMANDS } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
 import type { ViewerRenderCacheStats } from "../src/viewer-render-cache.js"
 import { createTempGitRepository, createTrackingGitPi, writeRepoFile } from "./helpers/temp-git-repository.js"
+import { testViewerOptions } from "./helpers/viewer.js"
 
 interface RawGitResult {
   stdout: string
@@ -60,6 +61,7 @@ function createViewer(pi: ExtensionAPI, cwd: string, document: DiffDocument): Co
     () => {},
     () => {},
     () => 80,
+    testViewerOptions,
   )
 }
 
