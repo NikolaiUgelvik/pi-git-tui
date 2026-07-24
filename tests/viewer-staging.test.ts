@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { buildWorkingTreeDocument } from "../src/diff-document.js"
 import type { WorkingTreeDocument } from "../src/types.js"
 import { DiffViewer } from "../src/viewer.js"
@@ -53,13 +53,17 @@ class IndexViewViewer extends DiffViewer {
   currentError(): string | undefined {
     return this.error
   }
+
+  formattedStats(stats: { files: number; additions: number; deletions: number }): string {
+    return this.formatDiffStats(stats)
+  }
 }
 
-function viewer(document: WorkingTreeDocument, pi = {} as ExtensionAPI): IndexViewViewer {
+function viewer(document: WorkingTreeDocument, pi = {} as ExtensionAPI, theme = testTheme): IndexViewViewer {
   return new IndexViewViewer(
     pi,
     { cwd: "/repo" } as ExtensionContext,
-    testTheme,
+    theme,
     document,
     () => {},
     () => {},
@@ -67,6 +71,34 @@ function viewer(document: WorkingTreeDocument, pi = {} as ExtensionAPI): IndexVi
     testViewerOptions,
   )
 }
+
+test("diff stats color non-zero additions and deletions while leaving zero counts muted", () => {
+  const colored: Array<[string, string]> = []
+  const theme = {
+    fg: (color: string, text: string) => {
+      colored.push([color, text])
+      return text
+    },
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+  } as Theme
+  const diffViewer = viewer(indexExactDocument(), {} as ExtensionAPI, theme)
+
+  assert.equal(diffViewer.formattedStats({ files: 2, additions: 3, deletions: 4 }), "2 files +3 −4")
+  assert.deepEqual(colored, [
+    ["muted", "2 files"],
+    ["success", "+3"],
+    ["error", "−4"],
+  ])
+
+  colored.length = 0
+  assert.equal(diffViewer.formattedStats({ files: 0, additions: 0, deletions: 0 }), "0 files +0 −0")
+  assert.deepEqual(colored, [
+    ["muted", "0 files"],
+    ["muted", "+0"],
+    ["muted", "−0"],
+  ])
+})
 
 test("v toggles between index-exact working and staged content", () => {
   const diffViewer = viewer(indexExactDocument())

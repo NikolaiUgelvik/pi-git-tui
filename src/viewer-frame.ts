@@ -113,16 +113,18 @@ export class DiffViewerFrame extends DiffViewerCore {
       const view = this.workingTreeView === "working" ? "Working" : "Staged"
       const staged = this.formatDiffStats(this.document.staged.stats)
       const working = this.formatDiffStats(this.document.working.stats)
-      const title = `${this.theme.bold(`${this.document.title} · ${view}`)} ${this.theme.fg("muted", `Staged ${staged} • Working ${working}`)}`
-      return fit(title, width)
+      const summary = `${this.theme.fg("muted", "Staged ")}${staged}${this.theme.fg("muted", " • Working ")}${working}`
+      return fit(`${this.theme.bold(`${this.document.title} · ${view}`)} ${summary}`, width)
     }
     const stats = this.formatDiffStats(this.document.diff.stats)
-    return fit(`${this.theme.bold(this.document.title)} ${this.theme.fg("muted", stats)}`, width)
+    return fit(`${this.theme.bold(this.document.title)} ${stats}`, width)
   }
 
   protected formatDiffStats(stats: { files: number; additions: number; deletions: number }): string {
-    const files = stats.files === 1 ? "1 file" : `${stats.files} files`
-    return `${files} +${stats.additions} −${stats.deletions}`
+    const files = this.theme.fg("muted", stats.files === 1 ? "1 file" : `${stats.files} files`)
+    const additions = this.theme.fg(stats.additions === 0 ? "muted" : "success", `+${stats.additions}`)
+    const deletions = this.theme.fg(stats.deletions === 0 ? "muted" : "error", `−${stats.deletions}`)
+    return `${files} ${additions} ${deletions}`
   }
 
   protected renderSubtitle(width: number): string {
