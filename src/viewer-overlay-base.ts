@@ -26,6 +26,16 @@ export class DiffViewerOverlayBase extends DiffViewerFrame {
     }
   }
 
+  protected renderPickerOverlay(
+    baseLines: string[],
+    width: number,
+    renderOverlay: (baseLineCount: number, width: number) => string[],
+  ): string[] {
+    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
+    const overlay = renderOverlay(baseLines.length, width)
+    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+  }
+
   protected commitPickerOverlayRow(content: string, overlayWidth: number): string {
     if (overlayWidth <= 0) {
       return ""

@@ -6,7 +6,7 @@
 
 A GitHub Desktop-style diff, staging, history, and commit workflow inside [Pi](https://github.com/badlogic/pi-mono).
 
-Review syntax-highlighted changes, move files between the working tree and index, browse commits, manage branches and stashes, and commit without leaving Pi.
+Review syntax-highlighted changes, move files between the working tree and index, browse commits, manage branches, tags, and stashes, and commit without leaving Pi.
 
 ## Why This Exists
 
@@ -17,7 +17,7 @@ Pi is already where the code changes happen. Reviewing those changes should not 
 - a file tree and responsive diff viewport;
 - separate, index-exact working and staged views;
 - syntax highlighting with GitHub Desktop-style intraline changes;
-- commit history, branch, stash, and worktree pickers;
+- commit history, branch, tag, stash, and worktree pickers;
 - guarded Git commands and recoverable async operations.
 
 Normal Git operations stay local. The model is only involved when you explicitly ask Pi to generate a commit message.
@@ -52,6 +52,7 @@ The viewer opens on working-tree changes. Press <kbd>?</kbd> or <kbd>F1</kbd> at
 | <kbd>Shift</kbd>+<kbd>Enter</kbd> | Stage all remaining changes or unstage everything |
 | <kbd>C</kbd> | Review staged changes; press again to open the commit dialog |
 | <kbd>c</kbd> | Browse the working tree and recent commits |
+| <kbd>t</kbd> | Browse tags or create one at a selected commit |
 | <kbd>Ctrl</kbd>+<kbd>P</kbd> | Open the Git command menu |
 | <kbd>r</kbd> | Reload the active diff or retry a failed refresh |
 | <kbd>Shift</kbd>+<kbd>S</kbd> | Open Pi Git TUI settings |
@@ -94,11 +95,12 @@ Inside the commit dialog, <kbd>Ctrl</kbd>+<kbd>X</kbd> toggles amend mode. Norma
 
 Press <kbd>c</kbd> to search recent commits by hash or message. Select a commit to inspect its diff, then press <kbd>W</kbd> to return directly to the working tree.
 
-### Branches, worktrees, and stashes
+### Branches, tags, worktrees, and stashes
 
 | Key | Tool |
 |-----|------|
 | <kbd>b</kbd> | Search and switch branches; <kbd>Ctrl</kbd>+<kbd>N</kbd> creates one |
+| <kbd>t</kbd> | Search tags and inspect their commits; <kbd>Ctrl</kbd>+<kbd>N</kbd> starts annotated or lightweight tag creation |
 | <kbd>w</kbd> | Search and switch worktrees |
 | <kbd>s</kbd> | Create, apply, pop, or drop stashes |
 | <kbd>D</kbd> | Review and confirm discarding the selected working-tree file |

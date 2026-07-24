@@ -1,6 +1,7 @@
 import { isViewerActionAvailable } from "./viewer-action-policy.js";
 export const HELP_TITLES = {
     branchPicker: "Branch picker help",
+    tagPicker: "Tag picker help",
     commandMenu: "Command menu help",
     commitDialog: "Commit dialog help",
     commitPicker: "Commit picker help",
@@ -61,6 +62,16 @@ export const HELP_ACTIONS = {
         { keys: "Esc", action: "Cancel the active field or close the branch picker" },
         { keys: "F1", action: "Show or close this help" },
     ],
+    tagPicker: [
+        { keys: "type", action: "Filter tags or commits, and edit tag details" },
+        { keys: "↑/↓", action: "Move through tags or target commits" },
+        { keys: "Enter", action: "Inspect a tag, choose its target, or create it" },
+        { keys: "Ctrl+N", action: "Choose a commit for a new tag" },
+        { keys: "Ctrl+T", action: "Toggle annotated or lightweight tag creation" },
+        { keys: "Tab", action: "Switch between tag name and annotation fields" },
+        { keys: "Esc", action: "Return to the previous step or close the tag picker" },
+        { keys: "F1", action: "Show or close this help" },
+    ],
     stashPicker: [
         { keys: "type", action: "Filter stashes; printable q enters the search" },
         { keys: "Enter", action: "Stash current changes or apply the selected stash" },
@@ -110,6 +121,7 @@ export const HELP_ACTIONS = {
         { keys: "I", action: "Initialize a git repository when none is present", viewerAction: "initialize" },
         { keys: "D", action: "Discard selected working-tree file after confirmation", viewerAction: "discard" },
         { keys: "b", action: "Open the branch picker", viewerAction: "branches" },
+        { keys: "t", action: "Browse tags or create one at a selected commit", viewerAction: "tags" },
         { keys: "w", action: "Open the worktree picker", viewerAction: "worktrees" },
         { keys: "s", action: "Open stash actions", viewerAction: "stashes" },
         { keys: "S", action: "Open Pi Git TUI settings" },

@@ -1,5 +1,5 @@
 import type { DiffDocument } from "./types.js";
-export type ViewerAction = "navigate" | "reload" | "toggleView" | "stageFile" | "stageAll" | "commit" | "discard" | "initialize" | "branches" | "stashes" | "commands" | "commitPicker" | "workingTree" | "worktrees" | "help" | "close";
+export type ViewerAction = "navigate" | "reload" | "toggleView" | "stageFile" | "stageAll" | "commit" | "discard" | "initialize" | "branches" | "tags" | "stashes" | "commands" | "commitPicker" | "workingTree" | "worktrees" | "help" | "close";
 export interface ViewerActionAvailability {
     available: boolean;
     reason?: string;

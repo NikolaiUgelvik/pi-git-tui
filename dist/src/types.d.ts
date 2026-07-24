@@ -5,6 +5,17 @@ export interface BranchSummary {
     upstream?: string;
     track?: string;
 }
+export type TagTargetType = "commit" | "tree" | "blob" | "tag" | "unknown";
+export interface TagSummary {
+    name: string;
+    annotated: boolean;
+    targetHash: string;
+    targetType: TagTargetType;
+    createdAt?: string;
+    creator?: string;
+    annotation?: string;
+    targetSubject?: string;
+}
 export interface StashSummary {
     ref: string;
     message: string;
@@ -139,7 +150,7 @@ export interface GitExecResult {
     killed: boolean;
 }
 export type FocusPanel = "tree" | "diff";
-export type HelpContext = "viewer" | "commitPicker" | "commandMenu" | "commitDialog" | "confirmDialog" | "branchPicker" | "stashPicker" | "worktreePicker" | "settings";
+export type HelpContext = "viewer" | "commitPicker" | "commandMenu" | "commitDialog" | "confirmDialog" | "branchPicker" | "tagPicker" | "stashPicker" | "worktreePicker" | "settings";
 export type ThemeColor = Parameters<Theme["fg"]>[0];
 export declare const TREE_STATUS_COLORS: Record<DiffFile["status"], ThemeColor>;
 export declare const GIT_COMMANDS: GitCommand[];

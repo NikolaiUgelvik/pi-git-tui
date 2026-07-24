@@ -24,6 +24,7 @@ export {
   popStash,
   stashCurrentChanges,
 } from "./git-stash-service.js"
+export { createTag, getTags as listTags } from "./git-tag-service.js"
 export { listWorktrees, parseWorktreeList } from "./git-worktree-service.js"
 export type { WorktreeSummary } from "./types.js"
 

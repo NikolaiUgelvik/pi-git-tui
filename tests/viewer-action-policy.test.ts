@@ -14,6 +14,7 @@ const allActions: ViewerAction[] = [
   "discard",
   "initialize",
   "branches",
+  "tags",
   "stashes",
   "commands",
   "commitPicker",
@@ -44,6 +45,7 @@ const expected = new Map([
       "commit",
       "discard",
       "branches",
+      "tags",
       "stashes",
       "commands",
       "commitPicker",
@@ -54,7 +56,7 @@ const expected = new Map([
   ],
   [
     "historical",
-    new Set<ViewerAction>(["navigate", "reload", "commitPicker", "workingTree", "worktrees", "help", "close"]),
+    new Set<ViewerAction>(["navigate", "reload", "tags", "commitPicker", "workingTree", "worktrees", "help", "close"]),
   ],
   ["missing", new Set<ViewerAction>(["navigate", "reload", "initialize", "help", "close"])],
 ])

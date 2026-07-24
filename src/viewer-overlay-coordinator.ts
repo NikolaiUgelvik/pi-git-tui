@@ -1,7 +1,7 @@
 import type { SingleLineTextField } from "./single-line-text-field.js"
 import type { HelpContext } from "./types.js"
 
-export type ViewerFeatureOverlayKind = "confirmation" | "branch" | "stash" | "worktree" | "settings"
+export type ViewerFeatureOverlayKind = "confirmation" | "branch" | "tag" | "stash" | "worktree" | "settings"
 
 export interface ViewerOverlayAdapter {
   isActive: () => boolean

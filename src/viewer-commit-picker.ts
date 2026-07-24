@@ -145,9 +145,9 @@ export class DiffViewerCommitPicker extends DiffViewerOverlayBase {
   }
 
   protected renderCommitPickerOverlay(baseLines: string[], width: number): string[] {
-    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const overlay = this.commitPickerController.renderOverlayLines(baseLines.length, width, this.theme)
-    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+    return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) =>
+      this.commitPickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme),
+    )
   }
 
   protected isBackspace(data: string): boolean {

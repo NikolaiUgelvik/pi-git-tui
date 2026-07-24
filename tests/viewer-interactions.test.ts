@@ -283,6 +283,7 @@ test("historical mode consumes and suppresses every working-tree mutation shortc
   diffViewer.handleInput("?")
   const help = diffViewer.render(240).join("\n")
   assert.match(help, /Return directly to the working tree/u)
+  assert.match(help, /Browse tags/u)
   assert.doesNotMatch(help, /Discard selected|Open the branch picker|Open stash actions|Stage remaining/u)
 })
 

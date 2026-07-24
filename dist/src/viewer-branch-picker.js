@@ -148,9 +148,7 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
         this.requestRender();
     }
     renderBranchOverlay(baseLines, width) {
-        const layout = this.commitPickerOverlayLayout(baseLines.length, width);
-        const overlay = this.branchPickerController.renderOverlayLines(baseLines.length, width, this.theme);
-        return this.applyCommitPickerOverlay(baseLines, overlay, layout, width);
+        return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) => this.branchPickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme));
     }
 }
 //# sourceMappingURL=viewer-branch-picker.js.map

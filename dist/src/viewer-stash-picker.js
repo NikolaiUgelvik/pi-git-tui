@@ -240,9 +240,7 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
         this.stashPickerController.state = "closed";
     }
     renderStashOverlay(baseLines, width) {
-        const layout = this.commitPickerOverlayLayout(baseLines.length, width);
-        const overlay = this.stashPickerController.renderOverlayLines(baseLines.length, width, this.theme);
-        return this.applyCommitPickerOverlay(baseLines, overlay, layout, width);
+        return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) => this.stashPickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme));
     }
 }
 //# sourceMappingURL=viewer-stash-picker.js.map

@@ -15,6 +15,11 @@ export class DiffViewerOverlayBase extends DiffViewerFrame {
             density: geometry.density,
         };
     }
+    renderPickerOverlay(baseLines, width, renderOverlay) {
+        const layout = this.commitPickerOverlayLayout(baseLines.length, width);
+        const overlay = renderOverlay(baseLines.length, width);
+        return this.applyCommitPickerOverlay(baseLines, overlay, layout, width);
+    }
     commitPickerOverlayRow(content, overlayWidth) {
         if (overlayWidth <= 0) {
             return "";

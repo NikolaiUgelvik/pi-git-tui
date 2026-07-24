@@ -7,6 +7,7 @@ const READY_WORKING_ACTIONS = new Set([
     "commit",
     "discard",
     "branches",
+    "tags",
     "stashes",
     "commands",
     "commitPicker",
@@ -17,6 +18,7 @@ const READY_WORKING_ACTIONS = new Set([
 const HISTORICAL_ACTIONS = new Set([
     "navigate",
     "reload",
+    "tags",
     "commitPicker",
     "workingTree",
     "worktrees",
@@ -34,6 +36,7 @@ const ACTION_PHRASES = {
     discard: "discarding changes",
     initialize: "initializing a repository",
     branches: "switching or creating branches",
+    tags: "browsing or creating tags",
     stashes: "using stashes",
     commands: "running Git commands",
     commitPicker: "opening commit history",

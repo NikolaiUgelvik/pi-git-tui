@@ -126,7 +126,7 @@ test("startup failure blocks mutation overlays until the document reloads", asyn
   const viewer = await openWithPi(pi)
   const startupExecCalls = execCalls
 
-  for (const input of ["C", "b", "s", "w", "\x10", "\n"]) {
+  for (const input of ["C", "b", "t", "s", "w", "\x10", "\n"]) {
     viewer.handleInput(input)
   }
   await flushViewerWork(2)

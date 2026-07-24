@@ -270,8 +270,8 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
   }
 
   protected renderStashOverlay(baseLines: string[], width: number): string[] {
-    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const overlay = this.stashPickerController.renderOverlayLines(baseLines.length, width, this.theme)
-    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+    return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) =>
+      this.stashPickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme),
+    )
   }
 }

@@ -138,8 +138,8 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
   }
 
   protected renderWorktreeOverlay(baseLines: string[], width: number): string[] {
-    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const overlay = this.worktreePickerController.renderOverlayLines(baseLines.length, width, this.theme)
-    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+    return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) =>
+      this.worktreePickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme),
+    )
   }
 }

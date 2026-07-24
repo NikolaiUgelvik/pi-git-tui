@@ -10,6 +10,7 @@ export type ViewerAction =
   | "discard"
   | "initialize"
   | "branches"
+  | "tags"
   | "stashes"
   | "commands"
   | "commitPicker"
@@ -32,6 +33,7 @@ const READY_WORKING_ACTIONS = new Set<ViewerAction>([
   "commit",
   "discard",
   "branches",
+  "tags",
   "stashes",
   "commands",
   "commitPicker",
@@ -42,6 +44,7 @@ const READY_WORKING_ACTIONS = new Set<ViewerAction>([
 const HISTORICAL_ACTIONS = new Set<ViewerAction>([
   "navigate",
   "reload",
+  "tags",
   "commitPicker",
   "workingTree",
   "worktrees",
@@ -60,6 +63,7 @@ const ACTION_PHRASES: Record<ViewerAction, string> = {
   discard: "discarding changes",
   initialize: "initializing a repository",
   branches: "switching or creating branches",
+  tags: "browsing or creating tags",
   stashes: "using stashes",
   commands: "running Git commands",
   commitPicker: "opening commit history",

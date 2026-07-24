@@ -1,7 +1,7 @@
 import { DiffSettingsController } from "./diff-settings-controller.js";
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js";
-import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js";
-export class DiffViewerSettings extends DiffViewerWorktreePicker {
+import { DiffViewerTagPicker } from "./viewer-tag-picker.js";
+export class DiffViewerSettings extends DiffViewerTagPicker {
     diffSettingsController;
     constructor(...args) {
         super(...args);

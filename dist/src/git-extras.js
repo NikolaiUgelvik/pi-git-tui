@@ -6,6 +6,7 @@ import { assertGitSuccess, ensureGitRepository, GitExitError, isUnbornHeadResult
 import { hasNestedSubmoduleChanges, isSubmoduleState } from "./git-submodule-state.js";
 export { createAndSwitchBranch, getBranches as listBranches, switchBranch } from "./git-branch-service.js";
 export { applyStash, dropStash, getStashes as listStashes, popStash, stashCurrentChanges, } from "./git-stash-service.js";
+export { createTag, getTags as listTags } from "./git-tag-service.js";
 export { listWorktrees, parseWorktreeList } from "./git-worktree-service.js";
 export async function initializeGitRepository(pi, cwd, signal) {
     const existing = await ensureGitRepository(pi, cwd, signal);

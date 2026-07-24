@@ -40,7 +40,7 @@ export async function reconcileCancellation(runtime, active, intent, mutation, s
             summary: successMessage ?? "Repository reconciled after cancellation",
             successMessage: successMessage ?? "Repository reconciled after cancellation",
             canRetryRefresh: false,
-        }, "Cancellation outcome is uncertain; diff refresh failed.", successMessage);
+        }, `Cancellation outcome is uncertain; ${intent.label} failed.`, successMessage);
         return { kind: "cancelled", mutation, reconciled: false, token: active.token };
     }
 }

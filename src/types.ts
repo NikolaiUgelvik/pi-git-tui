@@ -7,6 +7,19 @@ export interface BranchSummary {
   track?: string
 }
 
+export type TagTargetType = "commit" | "tree" | "blob" | "tag" | "unknown"
+
+export interface TagSummary {
+  name: string
+  annotated: boolean
+  targetHash: string
+  targetType: TagTargetType
+  createdAt?: string
+  creator?: string
+  annotation?: string
+  targetSubject?: string
+}
+
 export interface StashSummary {
   ref: string
   message: string
@@ -166,6 +179,7 @@ export type HelpContext =
   | "commitDialog"
   | "confirmDialog"
   | "branchPicker"
+  | "tagPicker"
   | "stashPicker"
   | "worktreePicker"
   | "settings"

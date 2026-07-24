@@ -10,6 +10,7 @@ export interface ViewerOverlayLayout {
 }
 export declare class DiffViewerOverlayBase extends DiffViewerFrame {
     protected commitPickerOverlayLayout(baseLineCount: number, width: number): ViewerOverlayLayout;
+    protected renderPickerOverlay(baseLines: string[], width: number, renderOverlay: (baseLineCount: number, width: number) => string[]): string[];
     protected commitPickerOverlayRow(content: string, overlayWidth: number): string;
     protected commitPickerBorder(edge: "top" | "bottom", overlayWidth: number): string;
     protected applyCommitPickerOverlay(baseLines: string[], overlay: string[], layout: ViewerOverlayLayout, width: number): string[];

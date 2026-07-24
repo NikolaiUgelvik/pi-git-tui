@@ -56,6 +56,7 @@ class BusyOperationViewer extends DiffViewer {
       this.branchState,
       this.stashState,
       this.worktreeState,
+      this.tagState,
       this.pickerState,
       this.commitDialogState,
       this.commandMenuState,
@@ -103,19 +104,19 @@ test("feature overlays stay closed during mutation cancellation and reconciliati
     testViewerOptions,
   )
   const running = viewer.startMutation()
-  for (const input of ["b", "s", "w", "c", "C", "\x10"]) {
+  for (const input of ["b", "t", "s", "w", "c", "C", "\x10"]) {
     viewer.handleInput(input)
   }
-  assert.deepEqual(viewer.overlayStates(), ["closed", "closed", "closed", "closed", "closed", "closed"])
+  assert.deepEqual(viewer.overlayStates(), ["closed", "closed", "closed", "closed", "closed", "closed", "closed"])
 
   viewer.handleInput("\x1b")
   viewer.mutation.resolve("Pull complete")
   await flushViewerWork(2)
   assert.equal(viewer.state(), "reconciling")
-  for (const input of ["b", "s", "w", "c", "C", "\x10"]) {
+  for (const input of ["b", "t", "s", "w", "c", "C", "\x10"]) {
     viewer.handleInput(input)
   }
-  assert.deepEqual(viewer.overlayStates(), ["closed", "closed", "closed", "closed", "closed", "closed"])
+  assert.deepEqual(viewer.overlayStates(), ["closed", "closed", "closed", "closed", "closed", "closed", "closed"])
 
   viewer.reconciliation.resolve("current document")
   const outcome = await running

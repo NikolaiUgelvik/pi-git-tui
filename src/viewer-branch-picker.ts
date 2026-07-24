@@ -162,8 +162,8 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
   }
 
   protected renderBranchOverlay(baseLines: string[], width: number): string[] {
-    const layout = this.commitPickerOverlayLayout(baseLines.length, width)
-    const overlay = this.branchPickerController.renderOverlayLines(baseLines.length, width, this.theme)
-    return this.applyCommitPickerOverlay(baseLines, overlay, layout, width)
+    return this.renderPickerOverlay(baseLines, width, (baseLineCount, overlayWidth) =>
+      this.branchPickerController.renderOverlayLines(baseLineCount, overlayWidth, this.theme),
+    )
   }
 }

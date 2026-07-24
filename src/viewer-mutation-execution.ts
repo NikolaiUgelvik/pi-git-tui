@@ -95,7 +95,7 @@ export async function executeMutation<T, R>(
         successMessage,
         canRetryRefresh: false,
       },
-      "Action succeeded; diff refresh failed.",
+      `Action succeeded; ${spec.refresh.label} failed.`,
       successMessage,
     )
     return { kind: "refreshFailed", mutation, failure, token: active.token }

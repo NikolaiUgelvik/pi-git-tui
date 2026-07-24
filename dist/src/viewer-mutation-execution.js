@@ -83,7 +83,7 @@ export async function executeMutation(runtime, active, spec) {
             summary: successMessage,
             successMessage,
             canRetryRefresh: false,
-        }, "Action succeeded; diff refresh failed.", successMessage);
+        }, `Action succeeded; ${spec.refresh.label} failed.`, successMessage);
         return { kind: "refreshFailed", mutation, failure, token: active.token };
     }
 }
