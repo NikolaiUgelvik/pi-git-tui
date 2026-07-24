@@ -5,9 +5,6 @@ import { createPluginSettingsStore } from "./plugin-settings.js";
 import { DiffViewer } from "./viewer.js";
 import { failedViewerDocument, loadedViewerDocument } from "./viewer-document-state.js";
 const diffDescription = "Open an interactive git diff and commit viewer";
-export function getDiffShortcut(platform = process.platform) {
-    return platform === "darwin" ? "super+shift+g" : "ctrl+shift+g";
-}
 export async function openDiffViewer(pi, ctx) {
     if (!ctx.hasUI) {
         ctx.ui.notify("/diff requires interactive mode", "error");
@@ -57,10 +54,6 @@ export default function gitDiffExtension(pi) {
     pi.registerCommand("diff", {
         description: diffDescription,
         handler: async (_args, ctx) => openDiffViewer(pi, ctx),
-    });
-    pi.registerShortcut(getDiffShortcut(), {
-        description: diffDescription,
-        handler: async (ctx) => openDiffViewer(pi, ctx),
     });
 }
 //# sourceMappingURL=extension.js.map

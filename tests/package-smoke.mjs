@@ -317,10 +317,8 @@ async function assertPackageLoads(packageRoot) {
 
   const extension = loaded.extensions[0]
   const command = extension?.commands.get("diff")
-  const expectedShortcut = process.platform === "darwin" ? "super+shift+g" : "ctrl+shift+g"
-  const shortcut = extension?.shortcuts.get(expectedShortcut)
   assert(command, "packed extension did not register /diff")
-  assert(shortcut, `packed extension did not register ${expectedShortcut}`)
+  assert.equal(extension?.shortcuts.size, 0, "packed extension registered an unexpected global shortcut")
 
   const notifications = []
   const context = {
@@ -332,11 +330,7 @@ async function assertPackageLoads(packageRoot) {
     },
   }
   await command.handler("", context)
-  await shortcut.handler(context)
-  assert.deepEqual(notifications, [
-    { message: "/diff requires interactive mode", level: "error" },
-    { message: "/diff requires interactive mode", level: "error" },
-  ])
+  assert.deepEqual(notifications, [{ message: "/diff requires interactive mode", level: "error" }])
 }
 
 const checkedDistSnapshot = directorySnapshot(join(root, "dist"))
@@ -378,18 +372,18 @@ try {
       [
         "--input-type=module",
         "--eval",
-        'const extension = await import("pi-git-tui"); process.stdout.write(JSON.stringify({ factory: typeof extension.default, shortcut: extension.getDiffShortcut("darwin") }))',
+        'const extension = await import("pi-git-tui"); process.stdout.write(JSON.stringify({ factory: typeof extension.default }))',
       ],
       { cwd: consumerDirectory },
     ),
   )
-  assert.deepEqual(exported, { factory: "function", shortcut: "super+shift+g" })
+  assert.deepEqual(exported, { factory: "function" })
 
   const packageRoot = join(consumerDirectory, "node_modules/pi-git-tui")
   assertInstalledContents(packageRoot)
   assertActualLocalPiInstall(packageRoot)
   await assertPackageLoads(packageRoot)
-  console.log("Packed pi-git-tui artifact exported, registered, and invoked /diff plus its shortcut successfully.")
+  console.log("Packed pi-git-tui artifact exported, registered, and invoked /diff successfully.")
 } finally {
   assert.deepEqual(directorySnapshot(join(root, "dist")), checkedDistSnapshot, "package smoke mutated checked dist")
   rmSync(temporaryRoot, { recursive: true, force: true })

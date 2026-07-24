@@ -1,5 +1,4 @@
 import { type ExtensionAPI, type ExtensionContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent"
-import type { KeyId } from "@earendil-works/pi-tui"
 import { loadWorkingTreeDocument } from "./git.js"
 import { isGitAbortError } from "./git-service.js"
 import { createPluginSettingsStore } from "./plugin-settings.js"
@@ -7,10 +6,6 @@ import { DiffViewer } from "./viewer.js"
 import { failedViewerDocument, loadedViewerDocument, type ViewerInitialDocument } from "./viewer-document-state.js"
 
 const diffDescription = "Open an interactive git diff and commit viewer"
-
-export function getDiffShortcut(platform: NodeJS.Platform = process.platform): KeyId {
-  return platform === "darwin" ? "super+shift+g" : "ctrl+shift+g"
-}
 
 export async function openDiffViewer(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   if (!ctx.hasUI) {
@@ -72,10 +67,5 @@ export default function gitDiffExtension(pi: ExtensionAPI) {
   pi.registerCommand("diff", {
     description: diffDescription,
     handler: async (_args, ctx) => openDiffViewer(pi, ctx),
-  })
-
-  pi.registerShortcut(getDiffShortcut(), {
-    description: diffDescription,
-    handler: async (ctx) => openDiffViewer(pi, ctx),
   })
 }

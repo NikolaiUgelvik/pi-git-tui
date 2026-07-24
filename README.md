@@ -38,13 +38,6 @@ Open the viewer from any directory inside a Git repository:
 /diff
 ```
 
-Or use the global shortcut:
-
-| Platform | Shortcut |
-|----------|----------|
-| macOS | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> |
-| Linux / Windows | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> |
-
 The viewer opens on working-tree changes. Press <kbd>?</kbd> or <kbd>F1</kbd> at any time for context-sensitive help.
 
 ## Everyday Workflow

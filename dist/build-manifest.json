@@ -9,8 +9,8 @@
     },
     {
       "path": "extensions/diff.ts",
-      "bytes": 272,
-      "sha256": "5277f2fc72cd71b97ccc9678f3a78ca3ac24b8ce8480abdec94d2417277eab35"
+      "bytes": 215,
+      "sha256": "770c9ff22dd10c23c9ddd3093d05c8850f3ccd95f1a8388b97c844fc4c75a449"
     },
     {
       "path": "package.json",
@@ -199,8 +199,8 @@
     },
     {
       "path": "src/extension.ts",
-      "bytes": 2720,
-      "sha256": "aa2cd5b7876079785b2d84a09d92dec9e36c102e59fb2d63e8cde37d5eb723bc"
+      "bytes": 2376,
+      "sha256": "df388f64f8dfb3ce05aa36960819a80b3c96cb4cbf40d7f5e26e3558dae4fd58"
     },
     {
       "path": "src/failure-details.ts",
@@ -581,18 +581,18 @@
   "outputs": [
     {
       "path": "dist/extensions/diff.d.ts",
-      "bytes": 187,
-      "sha256": "89285eb496dedac872b5324bba2ea5eb659605637a11fd27fb3bd62be126188a"
+      "bytes": 95,
+      "sha256": "4ef26d5ed8b6f698afe0d8b10b188b679e5c542937bd0a5b623b4f6f25ce55ca"
     },
     {
       "path": "dist/extensions/diff.js",
-      "bytes": 306,
-      "sha256": "35022ea197903e55cf59a604cba9edd2f17ca66ef83c0ef8e7ffad42a9757dfa"
+      "bytes": 248,
+      "sha256": "b84c1d0c53266385d164bc5f6879af5e52b255a181cb38b7d3678fea2e3401a2"
     },
     {
       "path": "dist/extensions/diff.js.map",
-      "bytes": 642,
-      "sha256": "42031fc16926293b56dd17661f079a9de38c6a44779d08d93126fbb8ac70b442"
+      "bytes": 533,
+      "sha256": "76aaa76f66cfb907f58d558e0ed2f44f9fc99911707e8f66aa41e04d50042830"
     },
     {
       "path": "dist/src/ansi-column-wrap.d.ts",
@@ -971,18 +971,18 @@
     },
     {
       "path": "dist/src/extension.d.ts",
-      "bytes": 383,
-      "sha256": "8460ee85c5c697348049b3bbaec074643a5f79182e2acc5b76528c0eecc51d3f"
+      "bytes": 254,
+      "sha256": "297b197abde7923527dd5d5a48ad0e17b8d44a0735e3889f148f9b1738135d98"
     },
     {
       "path": "dist/src/extension.js",
-      "bytes": 2600,
-      "sha256": "bcc30c020ea1b7b2dd396b946a526894e4844c846dbf0fe36b97e34bb3cf9a2c"
+      "bytes": 2318,
+      "sha256": "a355b77ab332607f46f170fe2bb6784aa26a6bf45646126bdfd8537b104e7421"
     },
     {
       "path": "dist/src/extension.js.map",
-      "bytes": 5447,
-      "sha256": "3c21f396cf769dd60ba428d641d83f3347ccbacc98610b29dc970c6696bd892e"
+      "bytes": 4797,
+      "sha256": "1775cc1c36070573d91fda82652f193f63be12f473c403ad90fa428616b7b773"
     },
     {
       "path": "dist/src/failure-details.d.ts",
