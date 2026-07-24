@@ -4,27 +4,44 @@
 import { FilterableListState } from "./filterable-list-state.js";
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js";
 import { handleFilterableListControllerInput, resetFilterableList } from "./overlay-input.js";
+import { PickerSession } from "./picker-session.js";
 // --- Controller ---
 export class WorktreePickerController {
     list;
-    state = "closed";
-    loadingMessage;
     activePath = "";
+    session = new PickerSession();
     _callbacks;
     constructor(callbacks) {
         this._callbacks = callbacks;
         this.list = new FilterableListState([], (worktree) => this.searchText(worktree));
     }
     // --- Lifecycle ---
+    get state() {
+        return this.session.state;
+    }
+    get loadingMessage() {
+        return this.session.loadingMessage;
+    }
+    beginLoading(message, returnState) {
+        return this.session.beginLoading(message, returnState);
+    }
+    isCurrent(request) {
+        return this.session.isCurrent(request);
+    }
+    finishLoading(request, nextState) {
+        return this.session.finish(request, nextState);
+    }
+    cancelLoading() {
+        return this.session.cancelLoading();
+    }
     open(worktrees, activePath) {
-        this.state = "open";
+        this.session.transition("open");
         this.activePath = activePath;
         this.list.items = worktrees;
         resetFilterableList(this.list, this._callbacks.onRequestRender);
     }
     close() {
-        this.state = "closed";
-        this.loadingMessage = undefined;
+        this.session.close();
         this._callbacks.onClose();
         this._callbacks.onRequestRender();
     }

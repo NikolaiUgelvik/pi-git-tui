@@ -37,22 +37,25 @@ export class DiffViewerStashPicker extends DiffViewerBranchPicker {
             },
             onRequestRender: () => this.requestRender(),
         });
-        this.featureOverlays.register("stash", {
-            isActive: () => this.stashPickerController.state !== "closed",
-            activeTextField: () => this.stashPickerController.state === "open" ? this.stashPickerController.list.searchField : undefined,
-            helpContext: () => (this.stashPickerController.state === "confirm" ? "confirmDialog" : "stashPicker"),
-            render: (baseLines, width) => this.renderStashOverlay(baseLines, width),
-            handleInput: (data) => this.handleStashInput(data),
-            handleOpen: (data) => {
-                if (data !== "s") {
-                    return false;
-                }
-                if (this.requireViewerAction("stashes") && this.canStartForegroundOperation("opening the stash picker")) {
-                    this.openStashPicker().catch((error) => this.showAsyncError(error));
-                }
-                return true;
+        this.featureOverlays.register({
+            kind: "stash",
+            adapter: {
+                isActive: () => this.stashPickerController.state !== "closed",
+                activeTextField: () => this.stashPickerController.state === "open" ? this.stashPickerController.list.searchField : undefined,
+                helpContext: () => (this.stashPickerController.state === "confirm" ? "confirmDialog" : "stashPicker"),
+                render: (baseLines, width) => this.renderStashOverlay(baseLines, width),
+                handleInput: (data) => this.handleStashInput(data),
+                handleOpen: (data) => {
+                    if (data !== "s") {
+                        return false;
+                    }
+                    if (this.requireViewerAction("stashes") && this.canStartForegroundOperation("opening the stash picker")) {
+                        this.openStashPicker().catch((error) => this.showAsyncError(error));
+                    }
+                    return true;
+                },
+                close: () => this.stashPickerController.close(),
             },
-            close: () => this.stashPickerController.close(),
         });
     }
     async openStashPicker() {

@@ -13,19 +13,21 @@ export interface ViewerOverlayAdapter {
   close: () => void
 }
 
-export interface ActiveOverlay {
+export interface ViewerOverlayFeature {
   readonly kind: ViewerFeatureOverlayKind
   readonly adapter: ViewerOverlayAdapter
+  invalidate?(): void
 }
 
 export class ViewerOverlayCoordinator {
-  private readonly overlays: ActiveOverlay[] = []
+  private readonly overlays: ViewerOverlayFeature[] = []
 
-  register(kind: ViewerFeatureOverlayKind, adapter: ViewerOverlayAdapter): void {
-    this.overlays.push({ kind, adapter })
+  /** Later registrations have higher input, rendering, and open priority. */
+  register(feature: ViewerOverlayFeature): void {
+    this.overlays.push(feature)
   }
 
-  active(): ActiveOverlay | undefined {
+  active(): ViewerOverlayFeature | undefined {
     for (let index = this.overlays.length - 1; index >= 0; index -= 1) {
       const overlay = this.overlays[index]
       if (overlay?.adapter.isActive()) {

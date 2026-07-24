@@ -26,22 +26,25 @@ export class DiffViewerBranchPicker extends DiffViewerActions {
             },
             onRequestRender: () => this.requestRender(),
         });
-        this.featureOverlays.register("branch", {
-            isActive: () => this.branchState !== "closed",
-            activeTextField: () => this.branchPickerController.activeTextField(),
-            helpContext: () => "branchPicker",
-            render: (baseLines, width) => this.renderBranchOverlay(baseLines, width),
-            handleInput: (data) => this.handleBranchInput(data),
-            handleOpen: (data) => {
-                if (data !== "b") {
-                    return false;
-                }
-                if (this.requireViewerAction("branches") && this.canStartForegroundOperation("opening the branch picker")) {
-                    this.openBranchPicker().catch((error) => this.showAsyncError(error));
-                }
-                return true;
+        this.featureOverlays.register({
+            kind: "branch",
+            adapter: {
+                isActive: () => this.branchState !== "closed",
+                activeTextField: () => this.branchPickerController.activeTextField(),
+                helpContext: () => "branchPicker",
+                render: (baseLines, width) => this.renderBranchOverlay(baseLines, width),
+                handleInput: (data) => this.handleBranchInput(data),
+                handleOpen: (data) => {
+                    if (data !== "b") {
+                        return false;
+                    }
+                    if (this.requireViewerAction("branches") && this.canStartForegroundOperation("opening the branch picker")) {
+                        this.openBranchPicker().catch((error) => this.showAsyncError(error));
+                    }
+                    return true;
+                },
+                close: () => this.branchPickerController.close(),
             },
-            close: () => this.branchPickerController.close(),
         });
     }
     async openBranchPicker() {

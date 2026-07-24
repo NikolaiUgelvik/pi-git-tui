@@ -2,15 +2,15 @@ import { matchesKey } from "@earendil-works/pi-tui";
 import { FilterableListState, isEnter } from "./filterable-list-state.js";
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js";
 import { handleFilterableListInput, isEscapeInput, resetFilterableList } from "./overlay-input.js";
+import { PickerSession } from "./picker-session.js";
 import { SingleLineTextField } from "./single-line-text-field.js";
 export class TagPickerController {
     callbacks;
     list;
     commits;
-    state = "closed";
-    loadingMessage;
     createTarget;
     createAnnotated = false;
+    session = new PickerSession();
     nameField = new SingleLineTextField();
     messageField = new SingleLineTextField();
     createFocus = "name";
@@ -29,6 +29,12 @@ export class TagPickerController {
             .filter(Boolean)
             .join(" "));
         this.commits = new FilterableListState([], (commit) => `${commit.hash} ${commit.message}`);
+    }
+    get state() {
+        return this.session.state;
+    }
+    get loadingMessage() {
+        return this.session.loadingMessage;
     }
     get createName() {
         return this.nameField.value;
@@ -51,13 +57,13 @@ export class TagPickerController {
             return this.createFocus === "message" ? this.messageField : this.nameField;
     }
     open(tags) {
-        this.state = "open";
+        this.session.transition("open");
         this.list.items = tags;
         this.clearCreation();
         resetFilterableList(this.list, this.callbacks.onRequestRender);
     }
     openTargetSelection(commits) {
-        this.state = "target";
+        this.session.transition("target");
         this.commits.items = commits;
         resetFilterableList(this.commits, this.callbacks.onRequestRender);
     }
@@ -67,15 +73,29 @@ export class TagPickerController {
         this.callbacks.onRequestRender();
     }
     showTagList() {
-        this.state = "open";
+        this.session.transition("open");
         this.list.searchQuery = "";
         this.list.reset();
         this.clearCreation();
         this.callbacks.onRequestRender();
     }
+    beginLoading(message, returnState) {
+        return this.session.beginLoading(message, returnState);
+    }
+    isCurrent(request) {
+        return this.session.isCurrent(request);
+    }
+    finishLoading(request, nextState) {
+        return this.session.finish(request, nextState);
+    }
+    cancelLoading() {
+        return this.session.cancelLoading();
+    }
+    updateLoadingMessage(message) {
+        this.session.updateLoadingMessage(message);
+    }
     close() {
-        this.state = "closed";
-        this.loadingMessage = undefined;
+        this.session.close();
         this.clearCreation();
         this.callbacks.onClose();
         this.callbacks.onRequestRender();
@@ -105,12 +125,13 @@ export class TagPickerController {
     }
     handleEscape() {
         if (this.state === "create") {
-            this.state = "target";
+            this.session.transition("target");
+            this.clearCreation();
             this.callbacks.onRequestRender();
             return;
         }
         if (this.state === "target") {
-            this.state = "open";
+            this.session.transition("open");
             this.callbacks.onRequestRender();
             return;
         }
@@ -125,7 +146,7 @@ export class TagPickerController {
         this.createName = "";
         this.createMessage = "";
         this.createFocus = "name";
-        this.state = "create";
+        this.session.transition("create");
     }
     handleCreateInput(data) {
         if (matchesKey(data, "ctrl+t") || data === "\x14") {

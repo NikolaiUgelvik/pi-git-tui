@@ -19,14 +19,17 @@ export class DiffViewerActions extends DiffViewerCommandMenu {
 
   constructor(...args: ConstructorParameters<typeof DiffViewerCommandMenu>) {
     super(...args)
-    this.featureOverlays.register("confirmation", {
-      isActive: () => this.confirmState !== "closed",
-      activeTextField: () => undefined,
-      helpContext: () => "confirmDialog",
-      render: (baseLines, width) => this.renderConfirmOverlay(baseLines, width),
-      handleInput: (data) => this.handleConfirmInput(data),
-      handleOpen: (data) => this.handleOpenInitDialogInput(data) || this.handleOpenDiscardDialogInput(data),
-      close: () => this.closeConfirmDialog(),
+    this.featureOverlays.register({
+      kind: "confirmation",
+      adapter: {
+        isActive: () => this.confirmState !== "closed",
+        activeTextField: () => undefined,
+        helpContext: () => "confirmDialog",
+        render: (baseLines, width) => this.renderConfirmOverlay(baseLines, width),
+        handleInput: (data) => this.handleConfirmInput(data),
+        handleOpen: (data) => this.handleOpenInitDialogInput(data) || this.handleOpenDiscardDialogInput(data),
+        close: () => this.closeConfirmDialog(),
+      },
     })
   }
 

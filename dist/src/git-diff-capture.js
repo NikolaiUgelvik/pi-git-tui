@@ -1,5 +1,6 @@
 import { DEFAULT_TRACKED_DIFF_BUDGET } from "./diff-budgets.js";
 import { parseDiff } from "./diff-parser-core.js";
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js";
 import { loadGitFileState, sameGitFileState } from "./git-file-state.js";
 import { loadHeadPathSizes, loadIndexPathIdentity, loadIndexPathSizes, } from "./git-object-sizes.js";
 import { splitGitPatch, textLineCount, utf8Bytes } from "./git-patch.js";
@@ -8,17 +9,6 @@ import { runGit, throwIfGitAborted } from "./git-service.js";
 import { retainTrackedPatchChunks } from "./git-tracked-retention.js";
 import { omittedTrackedGroup, selectTrackedGroups, trackedGroups, } from "./git-tracked-selection.js";
 import { mapGitWorkers } from "./git-worker-pool.js";
-const BASE_DIFF_ARGS = [
-    "-c",
-    "core.quotepath=false",
-    "diff",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--ignore-submodules=none",
-    "--find-renames",
-    "--find-copies",
-    "--color=never",
-];
 async function loadFileStates(root, paths, concurrency, signal) {
     const states = await mapGitWorkers(paths, concurrency, async (path, _index, workerSignal) => {
         throwIfGitAborted(workerSignal);
@@ -41,18 +31,17 @@ function cleanSnapshotProbeArgs(snapshot, scope) {
         : ["diff", "--quiet", snapshot.head.oid, "--"];
 }
 function workingTreeDiffArgs(snapshot, paths, scope) {
-    const literal = paths ? ["--literal-pathspecs"] : [];
-    const pathArgs = ["--", ...(paths ?? [])];
+    const options = [...CANONICAL_PATCH_OPTIONS];
     if (scope === "working")
-        return [...literal, ...BASE_DIFF_ARGS, ...pathArgs];
+        return buildDiffArgs({ options, paths });
     if (scope === "staged") {
-        const revision = snapshot.head.kind === "initial" ? [] : [snapshot.head.oid];
-        return [...literal, ...BASE_DIFF_ARGS, "--cached", ...revision, ...pathArgs];
+        const revisions = snapshot.head.kind === "initial" ? [] : [snapshot.head.oid];
+        return buildDiffArgs({ options: [...options, "--cached"], revisions, paths });
     }
     if (snapshot.head.kind !== "initial") {
-        return [...literal, ...BASE_DIFF_ARGS, snapshot.head.oid, ...pathArgs];
+        return buildDiffArgs({ options, revisions: [snapshot.head.oid], paths });
     }
-    return [...literal, ...BASE_DIFF_ARGS, "--cached", ...pathArgs];
+    return buildDiffArgs({ options: [...options, "--cached"], paths });
 }
 function scopedSnapshot(snapshot, scope) {
     if (scope === "combined")

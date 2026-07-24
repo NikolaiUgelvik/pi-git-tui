@@ -1,20 +1,11 @@
 import { SUBMODULE_SOURCE_BYTES } from "./diff-budgets.js";
 import { createDiffOmission } from "./diff-omission.js";
+import { buildDiffArgs } from "./git-diff-args.js";
 import { runGit, throwIfGitAborted } from "./git-service.js";
 import { mapGitWorkers } from "./git-worker-pool.js";
-const RAW_STAGED_ARGS = [
-    "-c",
-    "core.quotepath=false",
-    "diff",
-    "--cached",
-    "--raw",
-    "-z",
-    "--no-abbrev",
-    "--no-textconv",
-    "--find-renames",
-    "--find-copies",
-    "--",
-];
+const RAW_STAGED_ARGS = buildDiffArgs({
+    options: ["--cached", "--raw", "-z", "--no-abbrev", "--no-textconv", "--find-renames", "--find-copies"],
+});
 function parseRawMetadata(record) {
     const match = /^:([0-7]{6}) ([0-7]{6}) ([0-9a-f]+) ([0-9a-f]+) ([A-Z][0-9]*)$/iu.exec(record);
     if (!match)

@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { SUBMODULE_SOURCE_BYTES } from "./diff-budgets.js"
 import { createDiffOmission } from "./diff-omission.js"
+import { buildDiffArgs } from "./git-diff-args.js"
 import { runGit, throwIfGitAborted } from "./git-service.js"
 import { mapGitWorkers } from "./git-worker-pool.js"
 import type { DiffOmission, DiffOmissionReason } from "./types.js"
@@ -34,19 +35,9 @@ export interface CommitOmission {
   readonly omission: DiffOmission
 }
 
-const RAW_STAGED_ARGS = [
-  "-c",
-  "core.quotepath=false",
-  "diff",
-  "--cached",
-  "--raw",
-  "-z",
-  "--no-abbrev",
-  "--no-textconv",
-  "--find-renames",
-  "--find-copies",
-  "--",
-] as const
+const RAW_STAGED_ARGS = buildDiffArgs({
+  options: ["--cached", "--raw", "-z", "--no-abbrev", "--no-textconv", "--find-renames", "--find-copies"],
+})
 
 type StagedEntryMetadata = Omit<StagedEntry, "index" | "path" | "originalPath" | "paths">
 

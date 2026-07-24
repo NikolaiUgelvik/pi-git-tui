@@ -9,6 +9,7 @@ import {
 } from "./commit-staged-snapshot.js"
 import { type CommitPromptBudget, DEFAULT_COMMIT_PROMPT_BUDGET } from "./diff-budgets.js"
 import { parseDiff } from "./diff-parser-core.js"
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js"
 import { splitGitPatch, textLineCount } from "./git-patch.js"
 import { chunkLiteralPathGroups } from "./git-path-batches.js"
 import { ensureGitRepository, runGit, throwIfGitAborted } from "./git-service.js"
@@ -31,23 +32,10 @@ interface CommitPatchChunk {
 }
 
 function stagedPatchArgs(paths: readonly string[]): string[] {
-  return [
-    "--literal-pathspecs",
-    "-c",
-    "core.quotepath=false",
-    "diff",
-    "--cached",
-    "--stat",
-    "--patch",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--ignore-submodules=none",
-    "--find-renames",
-    "--find-copies",
-    "--color=never",
-    "--",
-    ...paths,
-  ]
+  return buildDiffArgs({
+    options: ["--cached", "--stat", "--patch", ...CANONICAL_PATCH_OPTIONS],
+    paths,
+  })
 }
 
 function commitPatchChunks(raw: string, entries: readonly StagedEntry[]): CommitPatchChunk[] {

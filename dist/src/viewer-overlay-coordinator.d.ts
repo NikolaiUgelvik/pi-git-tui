@@ -10,14 +10,16 @@ export interface ViewerOverlayAdapter {
     handleOpen: (data: string) => boolean;
     close: () => void;
 }
-export interface ActiveOverlay {
+export interface ViewerOverlayFeature {
     readonly kind: ViewerFeatureOverlayKind;
     readonly adapter: ViewerOverlayAdapter;
+    invalidate?(): void;
 }
 export declare class ViewerOverlayCoordinator {
     private readonly overlays;
-    register(kind: ViewerFeatureOverlayKind, adapter: ViewerOverlayAdapter): void;
-    active(): ActiveOverlay | undefined;
+    /** Later registrations have higher input, rendering, and open priority. */
+    register(feature: ViewerOverlayFeature): void;
+    active(): ViewerOverlayFeature | undefined;
     hasActive(): boolean;
     activeTextField(): SingleLineTextField | undefined;
     helpContext(): HelpContext | undefined;

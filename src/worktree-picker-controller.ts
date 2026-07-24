@@ -6,6 +6,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent"
 import { FilterableListState } from "./filterable-list-state.js"
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
 import { handleFilterableListControllerInput, resetFilterableList } from "./overlay-input.js"
+import { type PickerRequest, PickerSession } from "./picker-session.js"
 import type { WorktreeSummary } from "./types.js"
 
 // --- Types ---
@@ -21,10 +22,9 @@ export interface WorktreePickerCallbacks {
 
 export class WorktreePickerController {
   public list: FilterableListState<WorktreeSummary>
-  public state: "closed" | "loading" | "open" = "closed"
-  public loadingMessage: string | undefined
   public activePath = ""
 
+  private readonly session = new PickerSession<"open">()
   private readonly _callbacks: WorktreePickerCallbacks
 
   constructor(callbacks: WorktreePickerCallbacks) {
@@ -34,16 +34,39 @@ export class WorktreePickerController {
 
   // --- Lifecycle ---
 
+  get state(): "closed" | "loading" | "open" {
+    return this.session.state
+  }
+
+  get loadingMessage(): string | undefined {
+    return this.session.loadingMessage
+  }
+
+  public beginLoading(message: string, returnState: "closed" | "open"): PickerRequest {
+    return this.session.beginLoading(message, returnState)
+  }
+
+  public isCurrent(request: PickerRequest): boolean {
+    return this.session.isCurrent(request)
+  }
+
+  public finishLoading(request: PickerRequest, nextState: "closed" | "open"): boolean {
+    return this.session.finish(request, nextState)
+  }
+
+  public cancelLoading(): "closed" | "open" {
+    return this.session.cancelLoading()
+  }
+
   public open(worktrees: WorktreeSummary[], activePath: string): void {
-    this.state = "open"
+    this.session.transition("open")
     this.activePath = activePath
     this.list.items = worktrees
     resetFilterableList(this.list, this._callbacks.onRequestRender)
   }
 
   public close(): void {
-    this.state = "closed"
-    this.loadingMessage = undefined
+    this.session.close()
     this._callbacks.onClose()
     this._callbacks.onRequestRender()
   }

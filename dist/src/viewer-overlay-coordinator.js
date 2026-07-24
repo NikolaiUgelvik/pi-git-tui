@@ -1,7 +1,8 @@
 export class ViewerOverlayCoordinator {
     overlays = [];
-    register(kind, adapter) {
-        this.overlays.push({ kind, adapter });
+    /** Later registrations have higher input, rendering, and open priority. */
+    register(feature) {
+        this.overlays.push(feature);
     }
     active() {
         for (let index = this.overlays.length - 1; index >= 0; index -= 1) {

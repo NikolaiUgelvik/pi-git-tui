@@ -166,6 +166,7 @@ test("Escape moves backward through creation before closing", () => {
   h.controller.handleInput("\r")
   h.controller.handleInput("\x1b")
   assert.equal(h.controller.state, "target")
+  assert.equal(h.controller.createTarget, undefined)
   h.controller.handleInput("\x1b")
   assert.equal(h.controller.state, "open")
   h.controller.handleInput("\x1b")
@@ -176,7 +177,7 @@ test("Escape moves backward through creation before closing", () => {
 test("loading ignores input", () => {
   const h = harness()
   h.controller.open(tags)
-  h.controller.state = "loading"
+  h.controller.beginLoading("Loading tags…", "open")
   h.controller.handleInput("query")
   assert.equal(h.controller.list.searchQuery, "")
 })

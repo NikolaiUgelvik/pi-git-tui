@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { buildCommitDocument, buildWorkingTreeDocument, emptyWorkingTreeDocument } from "./diff-document.js"
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js"
 import { captureTrackedDiff, type TrackedDiffCapture } from "./git-diff-capture.js"
 import { captureHistoricalDiff } from "./git-historical-diff-capture.js"
 import { ensureGitRepository, requireGitRepository, runGit, throwIfGitAborted } from "./git-service.js"
@@ -15,18 +16,6 @@ import type {
   WorkingTreeDocument,
   WorkingTreeRevision,
 } from "./types.js"
-
-const BASE_DIFF_ARGS = [
-  "-c",
-  "core.quotepath=false",
-  "diff",
-  "--no-ext-diff",
-  "--no-textconv",
-  "--ignore-submodules=none",
-  "--find-renames",
-  "--find-copies",
-  "--color=never",
-] as const
 
 function headState(snapshot: WorkingTreeSnapshot): HeadState {
   return snapshot.head.kind === "initial" ? "unborn" : "present"
@@ -200,7 +189,8 @@ export async function loadCommitDocument(pi: ExtensionAPI, request: CommitDocume
 
 export async function getStagedDiff(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  return (await runGit(pi, root, [...BASE_DIFF_ARGS, "--cached", "--"], { signal })).stdout
+  return (await runGit(pi, root, buildDiffArgs({ options: [...CANONICAL_PATCH_OPTIONS, "--cached"] }), { signal }))
+    .stdout
 }
 
 export async function getCommitRangeDiff(
@@ -211,5 +201,9 @@ export async function getCommitRangeDiff(
   signal?: AbortSignal,
 ): Promise<string> {
   const root = await requireGitRepository(pi, cwd, signal)
-  return (await runGit(pi, root, [...BASE_DIFF_ARGS, `${from}...${to}`, "--"], { signal })).stdout
+  return (
+    await runGit(pi, root, buildDiffArgs({ options: CANONICAL_PATCH_OPTIONS, revisions: [`${from}...${to}`] }), {
+      signal,
+    })
+  ).stdout
 }

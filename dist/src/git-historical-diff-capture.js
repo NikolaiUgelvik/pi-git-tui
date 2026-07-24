@@ -2,18 +2,11 @@ import { commitOmission, loadBoundedStagedEntries, StagedRawEntryDecoder, } from
 import { DEFAULT_TRACKED_DIFF_BUDGET } from "./diff-budgets.js";
 import { omittedDiffFile } from "./diff-omission.js";
 import { parseDiff } from "./diff-parser-core.js";
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js";
 import { readNulRecords, readPatchChunks, withGitOutputFile } from "./git-output-file.js";
 import { textLineCount, utf8Bytes } from "./git-patch.js";
 import { chunkLiteralPathGroups } from "./git-path-batches.js";
 import { runGit, throwIfGitAborted } from "./git-service.js";
-const DIFF_OPTIONS = [
-    "--no-ext-diff",
-    "--no-textconv",
-    "--ignore-submodules=none",
-    "--find-renames",
-    "--find-copies",
-    "--color=never",
-];
 function validateOid(value) {
     if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(value))
         throw new Error("Git returned an invalid commit OID");
@@ -29,31 +22,29 @@ async function resolveHistoricalBase(pi, root, revision, signal) {
     return { commitOid, ...(values[1] === undefined ? {} : { parentOid: values[1] }) };
 }
 function rawDiffArgs(base, outputPath) {
-    const prefix = ["-c", "core.quotepath=false"];
-    const output = outputPath ? [`--output=${outputPath}`] : [];
-    const rawOptions = ["--raw", "-z", "--no-abbrev", "--no-textconv", "--find-renames", "--find-copies", ...output];
-    return base.parentOid
-        ? [...prefix, "diff", ...rawOptions, base.parentOid, base.commitOid, "--"]
-        : [...prefix, "diff-tree", "--root", "--no-commit-id", "-r", ...rawOptions, base.commitOid, "--"];
+    const options = [
+        "--raw",
+        "-z",
+        "--no-abbrev",
+        "--no-textconv",
+        "--find-renames",
+        "--find-copies",
+        ...(outputPath ? [`--output=${outputPath}`] : []),
+    ];
+    return buildDiffArgs({
+        command: base.parentOid ? "diff" : "root-diff-tree",
+        options,
+        revisions: base.parentOid ? [base.parentOid, base.commitOid] : [base.commitOid],
+    });
 }
 function patchDiffArgs(base, paths, outputPath) {
-    const prefix = ["--literal-pathspecs", "-c", "core.quotepath=false"];
     const output = outputPath ? [`--output=${outputPath}`] : [];
-    return base.parentOid
-        ? [...prefix, "diff", ...DIFF_OPTIONS, ...output, base.parentOid, base.commitOid, "--", ...paths]
-        : [
-            ...prefix,
-            "diff-tree",
-            "--root",
-            "--no-commit-id",
-            "-r",
-            "-p",
-            ...DIFF_OPTIONS,
-            ...output,
-            base.commitOid,
-            "--",
-            ...paths,
-        ];
+    return buildDiffArgs({
+        command: base.parentOid ? "diff" : "root-diff-tree",
+        options: [...(base.parentOid ? [] : ["-p"]), ...CANONICAL_PATCH_OPTIONS, ...output],
+        revisions: base.parentOid ? [base.parentOid, base.commitOid] : [base.commitOid],
+        paths,
+    });
 }
 async function loadHistoricalEntries(pi, root, base, maxEntries, signal) {
     return withGitOutputFile(pi, root, (outputPath) => rawDiffArgs(base, outputPath), async (outputPath) => {

@@ -223,7 +223,7 @@ test("q and Q belong to the worktree search field", () => {
 test("handleInput ignores input during loading state", () => {
   const { controller } = createController()
   controller.open(sampleWorktrees, "/repo")
-  controller.state = "loading"
+  controller.beginLoading("Loading worktrees…", "open")
   controller.handleInput("test")
   assert.equal(controller.list.searchQuery, "")
 })
@@ -294,8 +294,7 @@ test("renderOverlayLines shows search line", () => {
 test("renderOverlayLines shows loading message", () => {
   const { controller } = createController()
   controller.open(sampleWorktrees, "/repo")
-  controller.state = "loading"
-  controller.loadingMessage = "Loading worktrees…"
+  controller.beginLoading("Loading worktrees…", "open")
   const lines = controller.renderOverlayLines(20, 100, mockTheme)
   const loadingLine = lines.find((line) => line.includes("Loading worktrees"))
   assert.ok(loadingLine)

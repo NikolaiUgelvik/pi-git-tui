@@ -8,26 +8,32 @@ test("the highest-priority active overlay owns input, help, rendering, and lifec
   let confirmationOpen = true
   let stashOpen = true
 
-  coordinator.register("confirmation", {
-    isActive: () => confirmationOpen,
-    activeTextField: () => undefined,
-    helpContext: () => "confirmDialog",
-    render: () => ["confirmation"],
-    handleInput: (data) => input.push(`confirmation:${data}`),
-    handleOpen: () => false,
-    close: () => {
-      confirmationOpen = false
+  coordinator.register({
+    kind: "confirmation",
+    adapter: {
+      isActive: () => confirmationOpen,
+      activeTextField: () => undefined,
+      helpContext: () => "confirmDialog",
+      render: () => ["confirmation"],
+      handleInput: (data) => input.push(`confirmation:${data}`),
+      handleOpen: () => false,
+      close: () => {
+        confirmationOpen = false
+      },
     },
   })
-  coordinator.register("stash", {
-    isActive: () => stashOpen,
-    activeTextField: () => undefined,
-    helpContext: () => "stashPicker",
-    render: () => ["stash"],
-    handleInput: (data) => input.push(`stash:${data}`),
-    handleOpen: () => false,
-    close: () => {
-      stashOpen = false
+  coordinator.register({
+    kind: "stash",
+    adapter: {
+      isActive: () => stashOpen,
+      activeTextField: () => undefined,
+      helpContext: () => "stashPicker",
+      render: () => ["stash"],
+      handleInput: (data) => input.push(`stash:${data}`),
+      handleOpen: () => false,
+      close: () => {
+        stashOpen = false
+      },
     },
   })
 

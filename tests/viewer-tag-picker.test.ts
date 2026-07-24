@@ -245,6 +245,58 @@ test("creation cancellation reconciles tag rows instead of refreshing the diff",
   assert.doesNotMatch(frame, /Create tag at/u)
 })
 
+async function assertBackedOutCreationLoadStaysCancelled(lateOutcome: "resolve" | "reject"): Promise<void> {
+  const pending = deferred<ReturnType<typeof gitResult>>()
+  let logCalls = 0
+  let pendingSignal: AbortSignal | undefined
+  const pi = {
+    exec: async (_command: string, args: string[], options?: ExecOptions) => {
+      if (args[0] === "for-each-ref") return gitResult(initialTags)
+      if (args[0] === "log") {
+        logCalls += 1
+        if (logCalls === 1) return gitResult("abc1234\tAdd tags")
+        pendingSignal = options?.signal
+        return pending.promise
+      }
+      return gitResult("", 90, `unexpected git ${args.join(" ")}`)
+    },
+  } as ExtensionAPI
+  const diffViewer = viewer(pi)
+
+  diffViewer.handleInput("t")
+  await flushViewerWork()
+  diffViewer.handleInput("\x0e")
+  await flushViewerWork()
+  diffViewer.handleInput("\r")
+  diffViewer.handleInput("\x1b")
+  diffViewer.handleInput("\x1b")
+
+  diffViewer.handleInput("\x0e")
+  await flushViewerWork(2)
+  diffViewer.handleInput("\x1b")
+
+  assert.equal(pendingSignal?.aborted, true)
+  const cancelledFrame = diffViewer.render(140).join("\n")
+  assert.match(cancelledFrame, /│ Tags/u)
+  assert.doesNotMatch(cancelledFrame, /Cancelling tag creation|Loading target commits/u)
+
+  if (lateOutcome === "resolve") pending.resolve(gitResult("def5678\tPrepare release"))
+  else pending.reject(new Error("late target failure"))
+  await flushViewerWork()
+
+  const settledFrame = diffViewer.render(140).join("\n")
+  assert.match(settledFrame, /│ Tags/u)
+  assert.doesNotMatch(settledFrame, /Select tag target|late target failure/u)
+}
+
+test("backing out of tag creation lets Escape cancel a later target load before late resolution", async () => {
+  await assertBackedOutCreationLoadStaysCancelled("resolve")
+})
+
+test("backing out of tag creation lets Escape cancel a later target load before late rejection", async () => {
+  await assertBackedOutCreationLoadStaysCancelled("reject")
+})
+
 test("Escape cancels a pending tag list and late completion cannot reopen it", async () => {
   const pending = deferred<ReturnType<typeof gitResult>>()
   let listSignal: AbortSignal | undefined
@@ -270,4 +322,24 @@ test("Escape cancels a pending tag list and late completion cannot reopen it", a
   const frame = diffViewer.render(140).join("\n")
   assert.doesNotMatch(frame, /nightly/u)
   assert.doesNotMatch(frame, /│ Tags/u)
+})
+
+test("Escape cancels a pending tag list and late rejection cannot reopen it", async () => {
+  const pending = deferred<ReturnType<typeof gitResult>>()
+  const pi = {
+    exec: async (_command: string, args: string[]) => {
+      if (args[0] === "for-each-ref") return pending.promise
+      return gitResult("", 91, `unexpected git ${args.join(" ")}`)
+    },
+  } as ExtensionAPI
+  const diffViewer = viewer(pi)
+
+  diffViewer.handleInput("t")
+  await flushViewerWork(2)
+  diffViewer.handleInput("\x1b")
+  pending.reject(new Error("late tag list failure"))
+  await flushViewerWork()
+
+  const frame = diffViewer.render(140).join("\n")
+  assert.doesNotMatch(frame, /Tags|late tag list failure/u)
 })

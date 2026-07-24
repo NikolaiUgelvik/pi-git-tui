@@ -4,42 +4,39 @@ import { DiffViewerStashPicker } from "./viewer-stash-picker.js";
 import { WorktreePickerController } from "./worktree-picker-controller.js";
 export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     worktreePickerController;
-    worktreeState = "closed";
-    worktreeRequest = 0;
     constructor(...args) {
         super(...args);
         this.worktreePickerController = new WorktreePickerController({
             onSwitch: (worktree) => {
                 void this.switchToWorktree(worktree).catch((error) => this.showAsyncError(error));
             },
-            onClose: () => {
-                this.worktreeRequest += 1;
-                this.worktreeState = "closed";
-            },
+            onClose: () => this.cancelActiveOperation(),
             onRequestRender: () => this.requestRender(),
         });
-        this.featureOverlays.register("worktree", {
-            isActive: () => this.worktreeState !== "closed",
-            activeTextField: () => this.worktreeState === "open" ? this.worktreePickerController.list.searchField : undefined,
-            helpContext: () => "worktreePicker",
-            render: (baseLines, width) => this.renderWorktreeOverlay(baseLines, width),
-            handleInput: (data) => this.handleWorktreeInput(data),
-            handleOpen: (data) => {
-                if (data !== "w") {
-                    return false;
-                }
-                if (this.requireViewerAction("worktrees") && this.canStartForegroundOperation("opening the worktree picker")) {
-                    this.openWorktreePicker().catch((error) => this.showAsyncError(error));
-                }
-                return true;
+        this.featureOverlays.register({
+            kind: "worktree",
+            adapter: {
+                isActive: () => this.worktreePickerController.state !== "closed",
+                activeTextField: () => this.worktreePickerController.state === "open" ? this.worktreePickerController.list.searchField : undefined,
+                helpContext: () => "worktreePicker",
+                render: (baseLines, width) => this.renderWorktreeOverlay(baseLines, width),
+                handleInput: (data) => this.handleWorktreeInput(data),
+                handleOpen: (data) => {
+                    if (data !== "w")
+                        return false;
+                    if (this.requireViewerAction("worktrees") &&
+                        this.canStartForegroundOperation("opening the worktree picker")) {
+                        void this.openWorktreePicker().catch((error) => this.showAsyncError(error));
+                    }
+                    return true;
+                },
+                close: () => this.worktreePickerController.close(),
             },
-            close: () => this.worktreePickerController.close(),
         });
     }
     async openWorktreePicker() {
-        if (!this.requireViewerAction("worktrees")) {
+        if (!this.requireViewerAction("worktrees"))
             return;
-        }
         if (this.document.repositoryState === "missing") {
             this.error = "Initialize a git repository before switching worktrees";
             this.errorDetails = this.error;
@@ -47,45 +44,27 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
             this.requestRender();
             return;
         }
-        const requestId = ++this.worktreeRequest;
         const cwd = this.activePath();
-        this.worktreeState = "loading";
-        this.worktreePickerController.state = "loading";
-        this.loadingMessage = "Loading worktrees…";
-        this.worktreePickerController.loadingMessage = this.loadingMessage;
+        const request = this.worktreePickerController.beginLoading("Loading worktrees…", "closed");
         this.requestRender();
         const outcome = await this.runLoad({
             label: "worktrees",
             runningMessage: "Loading worktrees…",
             load: ({ signal }) => listWorktrees(this.pi, cwd, signal),
             apply: (worktrees) => {
-                if (requestId !== this.worktreeRequest || this.worktreeState === "closed") {
-                    return;
-                }
-                this.worktreeState = "open";
-                this.worktreePickerController.open(worktrees, cwd);
+                if (this.worktreePickerController.isCurrent(request))
+                    this.worktreePickerController.open(worktrees, cwd);
             },
         });
-        if (requestId !== this.worktreeRequest) {
+        if (!this.worktreePickerController.isCurrent(request))
             return;
-        }
-        if (outcome.kind !== "succeeded") {
-            this.worktreeState = "closed";
-            this.worktreePickerController.state = "closed";
-        }
-        this.loadingMessage = undefined;
-        this.worktreePickerController.loadingMessage = undefined;
+        this.worktreePickerController.finishLoading(request, outcome.kind === "succeeded" ? "open" : "closed");
         this.requestRender();
     }
     handleWorktreeInput(data) {
-        if (this.worktreeState === "loading") {
+        if (this.worktreePickerController.state === "loading") {
             if (matchesKey(data, "escape")) {
-                this.worktreeRequest += 1;
-                this.worktreeState = "closed";
-                this.worktreePickerController.state = "closed";
-                this.loadingMessage = undefined;
-                this.worktreePickerController.loadingMessage = undefined;
-                this.cancelActiveOperation();
+                this.worktreePickerController.close();
                 this.requestRender();
             }
             return;
@@ -94,38 +73,23 @@ export class DiffViewerWorktreePicker extends DiffViewerStashPicker {
     }
     async switchToWorktree(worktree) {
         if (!this.requireViewerAction("worktrees")) {
-            this.worktreeState = "closed";
-            this.worktreePickerController.state = "closed";
+            this.worktreePickerController.close();
             return;
         }
-        const requestId = ++this.worktreeRequest;
+        const request = this.worktreePickerController.beginLoading(`Loading ${worktree.path}…`, "open");
         const selection = this.documentState.captureSelection();
-        this.worktreeState = "loading";
-        this.worktreePickerController.state = "loading";
-        this.loadingMessage = `Loading ${worktree.path}…`;
-        this.worktreePickerController.loadingMessage = this.loadingMessage;
         this.requestRender();
         const outcome = await this.loadDocument({ kind: "working", cwd: worktree.path }, {
             runningMessage: `Loading ${worktree.path}…`,
             successMessage: `Viewing ${worktree.path}`,
             selection,
         });
-        if (requestId !== this.worktreeRequest) {
+        if (!this.worktreePickerController.isCurrent(request))
             return;
-        }
-        if (outcome.kind === "failed" || outcome.kind === "rejected") {
-            this.worktreeState = "open";
-            this.worktreePickerController.state = "open";
-            if (outcome.kind === "rejected") {
-                this.showOperationRejection("switch worktrees");
-            }
-        }
-        else {
-            this.worktreeState = "closed";
-            this.worktreePickerController.state = "closed";
-        }
-        this.loadingMessage = undefined;
-        this.worktreePickerController.loadingMessage = undefined;
+        const failed = outcome.kind === "failed" || outcome.kind === "rejected";
+        this.worktreePickerController.finishLoading(request, failed ? "open" : "closed");
+        if (outcome.kind === "rejected")
+            this.showOperationRejection("switch worktrees");
         this.requestRender();
     }
     renderWorktreeOverlay(baseLines, width) {

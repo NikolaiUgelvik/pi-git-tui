@@ -2,10 +2,31 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js";
 import { fit } from "./render-text.js";
 import { HELP_TITLES, helpActionsForDocument } from "./viewer-help.js";
-import { DiffViewerSettings } from "./viewer-settings.js";
-export class DiffViewer extends DiffViewerSettings {
+import { createSettingsFeature } from "./viewer-settings.js";
+import { DiffViewerTagPicker } from "./viewer-tag-picker.js";
+export class DiffViewer extends DiffViewerTagPicker {
     activeFocusedField;
+    settingsFeature;
     viewerFocused = false;
+    constructor(pi, ctx, theme, initialDocument, done, requestRender, getTerminalRows, viewerOptions) {
+        super(pi, ctx, theme, initialDocument, done, requestRender, getTerminalRows, viewerOptions);
+        this.settingsFeature = createSettingsFeature({
+            theme: this.theme,
+            settingsListTheme: this.settingsListTheme,
+            currentSettings: () => this.pluginSettings,
+            canOpen: () => this.canStartForegroundOperation("opening settings"),
+            save: (settings) => this.persistPluginSettings(settings),
+            saved: (settings) => {
+                this.applyPluginSettings(settings);
+                this.error = undefined;
+                this.errorDetails = undefined;
+                this.statusMessage = "Settings saved";
+            },
+            requestRender: () => this.requestRender(),
+            renderPicker: (baseLines, width, render) => this.renderPickerOverlay(baseLines, width, render),
+        });
+        this.featureOverlays.register(this.settingsFeature);
+    }
     get focused() {
         return this.viewerFocused;
     }
@@ -114,6 +135,10 @@ export class DiffViewer extends DiffViewerSettings {
             this.handleViewerNavigationInput(data);
             this.requestRender();
         }
+    }
+    invalidateDiffPresentation() {
+        super.invalidateDiffPresentation();
+        this.settingsFeature.invalidate?.();
     }
     invalidate() {
         this.invalidateDiffPresentation();

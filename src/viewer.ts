@@ -1,14 +1,49 @@
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
 import { type Focusable, wrapTextWithAnsi } from "@earendil-works/pi-tui"
 import { createOverlayFrame, type OverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
 import { fit } from "./render-text.js"
 import type { SingleLineTextField } from "./single-line-text-field.js"
-import type { HelpContext } from "./types.js"
+import type { DiffDocument, HelpContext } from "./types.js"
+import type { ViewerInitialDocument } from "./viewer-document-state.js"
 import { HELP_TITLES, type HelpAction, helpActionsForDocument } from "./viewer-help.js"
-import { DiffViewerSettings } from "./viewer-settings.js"
+import type { DiffViewerOptions } from "./viewer-operation-base.js"
+import type { ViewerOverlayFeature } from "./viewer-overlay-coordinator.js"
+import { createSettingsFeature } from "./viewer-settings.js"
+import { DiffViewerTagPicker } from "./viewer-tag-picker.js"
 
-export class DiffViewer extends DiffViewerSettings implements Focusable {
+export class DiffViewer extends DiffViewerTagPicker implements Focusable {
   private activeFocusedField: SingleLineTextField | undefined
+  private readonly settingsFeature: ViewerOverlayFeature
   private viewerFocused = false
+
+  constructor(
+    pi: ExtensionAPI,
+    ctx: ExtensionContext,
+    theme: Theme,
+    initialDocument: DiffDocument | ViewerInitialDocument,
+    done: () => void,
+    requestRender: () => void,
+    getTerminalRows: () => number,
+    viewerOptions: DiffViewerOptions,
+  ) {
+    super(pi, ctx, theme, initialDocument, done, requestRender, getTerminalRows, viewerOptions)
+    this.settingsFeature = createSettingsFeature({
+      theme: this.theme,
+      settingsListTheme: this.settingsListTheme,
+      currentSettings: () => this.pluginSettings,
+      canOpen: () => this.canStartForegroundOperation("opening settings"),
+      save: (settings) => this.persistPluginSettings(settings),
+      saved: (settings) => {
+        this.applyPluginSettings(settings)
+        this.error = undefined
+        this.errorDetails = undefined
+        this.statusMessage = "Settings saved"
+      },
+      requestRender: () => this.requestRender(),
+      renderPicker: (baseLines, width, render) => this.renderPickerOverlay(baseLines, width, render),
+    })
+    this.featureOverlays.register(this.settingsFeature)
+  }
 
   get focused(): boolean {
     return this.viewerFocused
@@ -135,6 +170,11 @@ export class DiffViewer extends DiffViewerSettings implements Focusable {
       this.handleViewerNavigationInput(data)
       this.requestRender()
     }
+  }
+
+  protected override invalidateDiffPresentation(): void {
+    super.invalidateDiffPresentation()
+    this.settingsFeature.invalidate?.()
   }
 
   invalidate(): void {

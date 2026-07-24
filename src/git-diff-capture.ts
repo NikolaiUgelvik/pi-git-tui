@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { DEFAULT_TRACKED_DIFF_BUDGET, type TrackedDiffBudget } from "./diff-budgets.js"
 import { parseDiff } from "./diff-parser-core.js"
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js"
 import { type GitFileState, loadGitFileState, sameGitFileState } from "./git-file-state.js"
 import {
   type IndexPathSizes,
@@ -31,18 +32,6 @@ export interface TrackedDiffCapture {
 }
 
 export type TrackedDiffCaptureScope = "combined" | "staged" | "working"
-
-const BASE_DIFF_ARGS = [
-  "-c",
-  "core.quotepath=false",
-  "diff",
-  "--no-ext-diff",
-  "--no-textconv",
-  "--ignore-submodules=none",
-  "--find-renames",
-  "--find-copies",
-  "--color=never",
-] as const
 
 async function loadFileStates(
   root: string,
@@ -81,17 +70,16 @@ function workingTreeDiffArgs(
   paths: readonly string[] | undefined,
   scope: TrackedDiffCaptureScope,
 ): string[] {
-  const literal = paths ? ["--literal-pathspecs"] : []
-  const pathArgs = ["--", ...(paths ?? [])]
-  if (scope === "working") return [...literal, ...BASE_DIFF_ARGS, ...pathArgs]
+  const options = [...CANONICAL_PATCH_OPTIONS]
+  if (scope === "working") return buildDiffArgs({ options, paths })
   if (scope === "staged") {
-    const revision = snapshot.head.kind === "initial" ? [] : [snapshot.head.oid]
-    return [...literal, ...BASE_DIFF_ARGS, "--cached", ...revision, ...pathArgs]
+    const revisions = snapshot.head.kind === "initial" ? [] : [snapshot.head.oid]
+    return buildDiffArgs({ options: [...options, "--cached"], revisions, paths })
   }
   if (snapshot.head.kind !== "initial") {
-    return [...literal, ...BASE_DIFF_ARGS, snapshot.head.oid, ...pathArgs]
+    return buildDiffArgs({ options, revisions: [snapshot.head.oid], paths })
   }
-  return [...literal, ...BASE_DIFF_ARGS, "--cached", ...pathArgs]
+  return buildDiffArgs({ options: [...options, "--cached"], paths })
 }
 
 function scopedSnapshot(snapshot: WorkingTreeSnapshot, scope: TrackedDiffCaptureScope): WorkingTreeSnapshot {

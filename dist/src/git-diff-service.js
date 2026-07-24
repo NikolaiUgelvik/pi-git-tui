@@ -1,4 +1,5 @@
 import { buildCommitDocument, buildWorkingTreeDocument, emptyWorkingTreeDocument } from "./diff-document.js";
+import { buildDiffArgs, CANONICAL_PATCH_OPTIONS } from "./git-diff-args.js";
 import { captureTrackedDiff } from "./git-diff-capture.js";
 import { captureHistoricalDiff } from "./git-historical-diff-capture.js";
 import { ensureGitRepository, requireGitRepository, runGit, throwIfGitAborted } from "./git-service.js";
@@ -6,17 +7,6 @@ import { loadWorkingTreeSnapshot, workingTreeBranchLabel } from "./git-status.js
 import { loadUntrackedDiffs } from "./git-untracked-service.js";
 import { linkedAbortController } from "./git-worker-pool.js";
 import { workingTreeContentIdentity } from "./git-working-tree-identity.js";
-const BASE_DIFF_ARGS = [
-    "-c",
-    "core.quotepath=false",
-    "diff",
-    "--no-ext-diff",
-    "--no-textconv",
-    "--ignore-submodules=none",
-    "--find-renames",
-    "--find-copies",
-    "--color=never",
-];
 function headState(snapshot) {
     return snapshot.head.kind === "initial" ? "unborn" : "present";
 }
@@ -156,10 +146,13 @@ export async function loadCommitDocument(pi, request) {
 }
 export async function getStagedDiff(pi, cwd, signal) {
     const root = await requireGitRepository(pi, cwd, signal);
-    return (await runGit(pi, root, [...BASE_DIFF_ARGS, "--cached", "--"], { signal })).stdout;
+    return (await runGit(pi, root, buildDiffArgs({ options: [...CANONICAL_PATCH_OPTIONS, "--cached"] }), { signal }))
+        .stdout;
 }
 export async function getCommitRangeDiff(pi, cwd, from, to, signal) {
     const root = await requireGitRepository(pi, cwd, signal);
-    return (await runGit(pi, root, [...BASE_DIFF_ARGS, `${from}...${to}`, "--"], { signal })).stdout;
+    return (await runGit(pi, root, buildDiffArgs({ options: CANONICAL_PATCH_OPTIONS, revisions: [`${from}...${to}`] }), {
+        signal,
+    })).stdout;
 }
 //# sourceMappingURL=git-diff-service.js.map

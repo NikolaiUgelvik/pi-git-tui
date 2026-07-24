@@ -55,7 +55,7 @@ class BusyOperationViewer extends DiffViewer {
     return [
       this.branchState,
       this.stashState,
-      this.worktreeState,
+      this.worktreePickerController.state,
       this.tagState,
       this.pickerState,
       this.commitDialogState,
@@ -275,4 +275,32 @@ test("cancelled worktree load cannot replace the active cwd when it completes la
   assert.match(frame, /\/repo-main \(main\)/u)
   assert.doesNotMatch(frame, /\/repo-feature \(feature\)/u)
   assert.doesNotMatch(frame, / Worktrees\s/u)
+})
+
+test("Escape keeps the worktree picker closed after a late list rejection", async () => {
+  const pendingList = deferred<ReturnType<typeof gitResult>>()
+  const pi = {
+    exec: async (_command: string, args: string[]) =>
+      args[0] === "rev-parse" ? gitResult("/repo-main\n") : pendingList.promise,
+  } as ExtensionAPI
+  const viewer = new DiffViewer(
+    pi,
+    { cwd: "/repo-main" } as ExtensionContext,
+    testTheme,
+    workingDocument("/repo-main"),
+    () => {},
+    () => {},
+    () => 40,
+    testViewerOptions,
+  )
+
+  viewer.handleInput("w")
+  await flushViewerWork(2)
+  viewer.handleInput("\x1b")
+  pendingList.reject(new Error("late worktree failure"))
+  await flushViewerWork()
+
+  const frame = viewer.render(140).join("\n")
+  assert.doesNotMatch(frame, /Worktrees|late worktree failure/u)
+  assert.match(frame, /\/repo-main \(main\)/u)
 })

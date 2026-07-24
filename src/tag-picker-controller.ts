@@ -3,6 +3,7 @@ import { matchesKey } from "@earendil-works/pi-tui"
 import { FilterableListState, isEnter } from "./filterable-list-state.js"
 import { createOverlayFrame, renderOverlayFrame } from "./overlay-frame.js"
 import { handleFilterableListInput, isEscapeInput, resetFilterableList } from "./overlay-input.js"
+import { type PickerRequest, PickerSession } from "./picker-session.js"
 import { SingleLineTextField } from "./single-line-text-field.js"
 import type { CommitSummary, TagSummary } from "./types.js"
 
@@ -27,11 +28,10 @@ export interface TagPickerCallbacks {
 export class TagPickerController {
   public readonly list: FilterableListState<TagSummary>
   public readonly commits: FilterableListState<CommitSummary>
-  public state: TagPickerState = "closed"
-  public loadingMessage: string | undefined
   public createTarget: CommitSummary | undefined
   public createAnnotated = false
 
+  private readonly session = new PickerSession<"open" | "target" | "create">()
   private readonly nameField = new SingleLineTextField()
   private readonly messageField = new SingleLineTextField()
   private createFocus: "name" | "message" = "name"
@@ -52,6 +52,14 @@ export class TagPickerController {
         .join(" "),
     )
     this.commits = new FilterableListState<CommitSummary>([], (commit) => `${commit.hash} ${commit.message}`)
+  }
+
+  get state(): TagPickerState {
+    return this.session.state
+  }
+
+  get loadingMessage(): string | undefined {
+    return this.session.loadingMessage
   }
 
   get createName(): string {
@@ -77,14 +85,14 @@ export class TagPickerController {
   }
 
   public open(tags: TagSummary[]): void {
-    this.state = "open"
+    this.session.transition("open")
     this.list.items = tags
     this.clearCreation()
     resetFilterableList(this.list, this.callbacks.onRequestRender)
   }
 
   public openTargetSelection(commits: CommitSummary[]): void {
-    this.state = "target"
+    this.session.transition("target")
     this.commits.items = commits
     resetFilterableList(this.commits, this.callbacks.onRequestRender)
   }
@@ -96,16 +104,35 @@ export class TagPickerController {
   }
 
   public showTagList(): void {
-    this.state = "open"
+    this.session.transition("open")
     this.list.searchQuery = ""
     this.list.reset()
     this.clearCreation()
     this.callbacks.onRequestRender()
   }
 
+  public beginLoading(message: string, returnState: Exclude<TagPickerState, "loading">): PickerRequest {
+    return this.session.beginLoading(message, returnState)
+  }
+
+  public isCurrent(request: PickerRequest): boolean {
+    return this.session.isCurrent(request)
+  }
+
+  public finishLoading(request: PickerRequest, nextState: Exclude<TagPickerState, "loading">): boolean {
+    return this.session.finish(request, nextState)
+  }
+
+  public cancelLoading(): Exclude<TagPickerState, "loading"> {
+    return this.session.cancelLoading()
+  }
+
+  public updateLoadingMessage(message: string): void {
+    this.session.updateLoadingMessage(message)
+  }
+
   public close(): void {
-    this.state = "closed"
-    this.loadingMessage = undefined
+    this.session.close()
     this.clearCreation()
     this.callbacks.onClose()
     this.callbacks.onRequestRender()
@@ -133,12 +160,13 @@ export class TagPickerController {
 
   private handleEscape(): void {
     if (this.state === "create") {
-      this.state = "target"
+      this.session.transition("target")
+      this.clearCreation()
       this.callbacks.onRequestRender()
       return
     }
     if (this.state === "target") {
-      this.state = "open"
+      this.session.transition("open")
       this.callbacks.onRequestRender()
       return
     }
@@ -155,7 +183,7 @@ export class TagPickerController {
     this.createName = ""
     this.createMessage = ""
     this.createFocus = "name"
-    this.state = "create"
+    this.session.transition("create")
   }
 
   private handleCreateInput(data: string): void {

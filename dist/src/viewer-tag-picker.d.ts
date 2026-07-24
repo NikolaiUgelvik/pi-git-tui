@@ -2,8 +2,6 @@ import { TagPickerController, type TagPickerState } from "./tag-picker-controlle
 import { DiffViewerWorktreePicker } from "./viewer-worktree-picker.js";
 export declare class DiffViewerTagPicker extends DiffViewerWorktreePicker {
     protected tagPickerController: TagPickerController;
-    private tagRequest;
-    private tagLoadingReturnState;
     constructor(...args: ConstructorParameters<typeof DiffViewerWorktreePicker>);
     protected get tagState(): TagPickerState;
     protected handleTagInput(data: string): void;
@@ -13,7 +11,5 @@ export declare class DiffViewerTagPicker extends DiffViewerWorktreePicker {
     private viewTag;
     private runTagCreate;
     private tagListRefreshIntent;
-    private beginTagLoading;
-    private finishTagLoading;
     protected renderTagOverlay(baseLines: string[], width: number): string[];
 }
