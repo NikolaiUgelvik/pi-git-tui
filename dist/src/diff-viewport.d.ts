@@ -15,7 +15,9 @@ export interface DiffViewportResult {
     readonly horizontalOffset: number;
     readonly maxVerticalOffset: number;
     readonly maxHorizontalOffset: number;
+    readonly verticallyScrollable: boolean;
     readonly horizontallyScrollable: boolean;
+    readonly contentHeight: number;
     readonly gutterWidth: number;
     readonly contentWidth: number;
 }

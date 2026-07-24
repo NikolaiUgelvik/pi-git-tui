@@ -121,6 +121,7 @@ test("wrapped viewport scrolling uses visual rows and reserves its scrollbar", (
 
   assert.ok(result.maxVerticalOffset > 0)
   assert.equal(result.verticalOffset, result.maxVerticalOffset)
+  assert.equal(result.verticallyScrollable, true)
   assert.equal(result.contentWidth, 6)
   assert.match(plain(result.lines[0] ?? ""), /[│┃]$/u)
   assert.equal(visibleWidth(result.lines[0] ?? ""), 12)
@@ -160,6 +161,7 @@ test("wrapped scrollbar probing keeps the full width when content fits exactly",
 
   assert.equal(result.contentWidth, 2)
   assert.equal(result.maxVerticalOffset, 0)
+  assert.equal(result.verticallyScrollable, false)
   assert.equal(plain(result.lines[0] ?? ""), "  ")
 })
 

@@ -74,7 +74,7 @@ export class SingleLineTextField implements Focusable {
     if (reserved) {
       return false
     }
-    this.input.handleInput(data)
+    this.input.handleInput(data === "\b" ? "\x7f" : data)
     return true
   }
 

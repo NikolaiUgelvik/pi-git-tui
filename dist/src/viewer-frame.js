@@ -11,6 +11,7 @@ import { prioritizedFooter, viewerFooterActions } from "./viewer-footer-actions.
 import { ViewerRenderCache } from "./viewer-render-cache.js";
 export class DiffViewerFrame extends DiffViewerCore {
     diffMaximumColumn = 0;
+    diffScrollPosition;
     renderCache = new ViewerRenderCache([], (file) => prepareDiffPresentation(file, this.theme, piSyntaxHighlighting));
     invalidateDiffPresentation() {
         this.renderCache.invalidatePresentation();
@@ -109,7 +110,8 @@ export class DiffViewerFrame extends DiffViewerCore {
         const switchHint = single ? ` · Tab: ${destination}` : "";
         const wrapHint = panel === "diff" && this.pluginSettings.diff.wrap ? " · wrap" : "";
         const columnHint = panel === "diff" && this.diffMaximumColumn > 0 ? this.diffColumnHint() : "";
-        const label = `${panel === "tree" ? "Files" : "Diff"}${scope}${wrapHint}${columnHint}${switchHint}`;
+        const scrollHint = panel === "diff" ? this.diffScrollHint() : "";
+        const label = `${panel === "tree" ? "Files" : "Diff"}${scope}${wrapHint}${columnHint}${scrollHint}${switchHint}`;
         const marker = focused ? "▶ " : "  ";
         const text = `${marker}${label}`;
         return fit(focused ? this.theme.fg("accent", this.theme.bold(text)) : this.theme.fg("muted", text), width);
@@ -118,6 +120,13 @@ export class DiffViewerFrame extends DiffViewerCore {
         const left = this.diffColumn > 0 ? "‹" : "";
         const right = this.diffColumn < this.diffMaximumColumn ? "›" : "";
         return ` · ${left}col ${this.diffColumn + 1}${right}`;
+    }
+    diffScrollHint() {
+        const position = this.diffScrollPosition;
+        if (!position)
+            return "";
+        const arrows = `${position.canScrollUp ? "↑" : ""}${position.canScrollDown ? "↓" : ""}`;
+        return ` · [${position.start}-${position.end} / ${position.total}] ${arrows}`;
     }
     renderFooter(width) {
         return this.renderOperationFooter(width) ?? this.renderDocumentFooter(width) ?? this.renderNavigationFooter(width);
@@ -228,12 +237,14 @@ export class DiffViewerFrame extends DiffViewerCore {
         const failure = this.currentFailureDetails();
         if (failure) {
             this.diffMaximumColumn = 0;
+            this.diffScrollPosition = undefined;
             this.diffColumn = 0;
             return this.renderFailurePanel(failure.summary, failure.details, width, height);
         }
         const file = this.files[this.selectedFileIndex];
         if (!file) {
             this.diffMaximumColumn = 0;
+            this.diffScrollPosition = undefined;
             this.diffColumn = 0;
             const message = this.emptyDiffMessage();
             const lines = [this.theme.fg("muted", message)];
@@ -244,8 +255,10 @@ export class DiffViewerFrame extends DiffViewerCore {
         }
         this.renderCache.replaceDocument(this.files);
         const display = this.renderCache.selectedFileDisplay(this.selectedFileIndex);
-        if (!display)
+        if (!display) {
+            this.diffScrollPosition = undefined;
             return [];
+        }
         const viewport = renderDiffViewport({
             display,
             width,
@@ -258,6 +271,16 @@ export class DiffViewerFrame extends DiffViewerCore {
         this.diffScroll = viewport.verticalOffset;
         this.diffColumn = viewport.horizontalOffset;
         this.diffMaximumColumn = viewport.maxHorizontalOffset;
+        this.diffScrollPosition =
+            viewport.verticallyScrollable && viewport.lines.length > 0
+                ? {
+                    start: viewport.verticalOffset + 1,
+                    end: Math.min(viewport.verticalOffset + viewport.lines.length, viewport.contentHeight),
+                    total: viewport.contentHeight,
+                    canScrollUp: viewport.verticalOffset > 0,
+                    canScrollDown: viewport.verticalOffset < viewport.maxVerticalOffset,
+                }
+                : undefined;
         return viewport.lines;
     }
     renderFailurePanel(summary, details, width, height) {

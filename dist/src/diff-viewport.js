@@ -134,7 +134,9 @@ export function renderDiffViewport(input) {
         horizontalOffset,
         maxVerticalOffset,
         maxHorizontalOffset,
+        verticallyScrollable: geometry.scrollable,
         horizontallyScrollable: maxHorizontalOffset > 0,
+        contentHeight: geometry.contentHeight,
         gutterWidth: geometry.gutterWidth,
         contentWidth: geometry.contentWidth,
     };

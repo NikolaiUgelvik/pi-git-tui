@@ -194,8 +194,8 @@
     },
     {
       "path": "src/diff-viewport.ts",
-      "bytes": 7573,
-      "sha256": "f16709015e5c631c63e88a59c53bf227780c9284694d19a45c83c31d6047c01c"
+      "bytes": 7737,
+      "sha256": "39516551b150ee463575afffade94207db8362cd7bff54a7cccddfd90754f42d"
     },
     {
       "path": "src/extension.ts",
@@ -399,8 +399,8 @@
     },
     {
       "path": "src/single-line-text-field.ts",
-      "bytes": 2724,
-      "sha256": "8a00ab58f4aea13dcee1046c9f8b71ab5aec238b3af68d561d36d94d7bf32b48"
+      "bytes": 2749,
+      "sha256": "f99506ff90fd185e334f10a87c28820fc07edb67a089978bb333c82ab1b73b65"
     },
     {
       "path": "src/stash-picker-controller.ts",
@@ -464,8 +464,8 @@
     },
     {
       "path": "src/viewer-frame.ts",
-      "bytes": 15379,
-      "sha256": "0478e38f515cf3e65b6afc2466437d47b963beb37e66e91ef54f0d6230e6886a"
+      "bytes": 16595,
+      "sha256": "eb7e6fbe57a68d38a5d09629969ac38d62b9e6975afa110d590dd74d31ad170d"
     },
     {
       "path": "src/viewer-help.ts",
@@ -956,18 +956,18 @@
     },
     {
       "path": "dist/src/diff-viewport.d.ts",
-      "bytes": 833,
-      "sha256": "406a3f7d71463c21588fdc11cce96f77a984cc23b3ba6364860326d56d07706a"
+      "bytes": 913,
+      "sha256": "1b9ff87d2a8962691ea473fcd1e7aba84d8cece30538c847d89b2489b2392d0e"
     },
     {
       "path": "dist/src/diff-viewport.js",
-      "bytes": 6433,
-      "sha256": "61ff8d82bc8f006f1a0d7897ae24618eb6b5e6c224937ae901b3616f4e91b6ae"
+      "bytes": 6531,
+      "sha256": "b6a6b1d0561ebb41e8691509449666e5ef76ca6ac2e482bb3f63877581b884d8"
     },
     {
       "path": "dist/src/diff-viewport.js.map",
-      "bytes": 15252,
-      "sha256": "fc64f506cd655b3b379dbb975092e92b86e2c3add30757e4ca9334248c2a515b"
+      "bytes": 15484,
+      "sha256": "10c8ca09c4dfd2b4153627a46908fa877a38ebc4c971dde57336c470c54adbd4"
     },
     {
       "path": "dist/src/extension.d.ts",
@@ -1576,13 +1576,13 @@
     },
     {
       "path": "dist/src/single-line-text-field.js",
-      "bytes": 2577,
-      "sha256": "6647444a4e3639af7709b5b6d8172d427ca1c6bd267944923a11b3c1473c39f8"
+      "bytes": 2602,
+      "sha256": "9808f13978c3b45692db3fbae5e6bf4791dada024ac0a1be8a8c0752254d53cf"
     },
     {
       "path": "dist/src/single-line-text-field.js.map",
-      "bytes": 5839,
-      "sha256": "e464c58b12808fe60239309e8af84b92ec5d1e7a85c8abaf9f59741f338c71b2"
+      "bytes": 5920,
+      "sha256": "a97c54ab1ebe9d97f5265dc5e87118f54c8f04cdf08be9edc6d2cf8ea7989fb5"
     },
     {
       "path": "dist/src/stash-picker-controller.d.ts",
@@ -1766,18 +1766,18 @@
     },
     {
       "path": "dist/src/viewer-frame.d.ts",
-      "bytes": 1569,
-      "sha256": "99d774c9e5bcb3ebf2323421e4fe7a59342eb00a136c2990b27ca5aa6b65a1fe"
+      "bytes": 1629,
+      "sha256": "f34178622521557f549ed5043648e7d0d5a6da307fca62f1e7727c0c9f53934c"
     },
     {
       "path": "dist/src/viewer-frame.js",
-      "bytes": 15481,
-      "sha256": "48dcf3f6887dbf7d7370518a58f047b273a9603e576cca98032279e87a542c61"
+      "bytes": 16603,
+      "sha256": "4a368ed604972db5c3fd2dc00be0bde3696d89ce13b79c2eef7c51485eedc061"
     },
     {
       "path": "dist/src/viewer-frame.js.map",
-      "bytes": 32836,
-      "sha256": "61aedfe7f1d03871b82bda462c565815704f1576c559eba4a7b4cc6014440dd5"
+      "bytes": 35115,
+      "sha256": "b0d75ed685af5a4973765a44ed4374d7b70e640debf4859cc484b25feb667689"
     },
     {
       "path": "dist/src/viewer-help.d.ts",

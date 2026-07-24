@@ -24,6 +24,13 @@ for (const grapheme of graphemes) {
   })
 }
 
+test("ASCII backspace is normalized for the text input", () => {
+  const field = new SingleLineTextField("text")
+
+  assert.equal(field.handleInput("\b", "editor"), true)
+  assert.equal(field.value, "tex")
+})
+
 test("Left and Right keep insertion points on grapheme boundaries", () => {
   const family = "👨‍👩‍👧‍👦"
   const field = new SingleLineTextField(`A${family}B`)

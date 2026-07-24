@@ -45,6 +45,10 @@ class TestFrameViewer extends DiffViewerFrame {
     this.diffScroll = scroll
     return this.renderDiff(width, height)
   }
+
+  diffPanelTitle(width: number): string {
+    return this.renderPanelTitle("diff", width)
+  }
 }
 
 class TestOverlayViewer extends DiffViewerOverlayBase {
@@ -269,6 +273,25 @@ test("frame diff scrolls by formatted rows and aligns scrollbar height", () => {
       .map((line) => line.at(-1)),
     ["│", "┃"],
   )
+})
+
+test("frame diff title shows the visible range and available scroll directions", () => {
+  const document = workingWithFiles([
+    file("src/example.ts", ["@@ -1 +1 @@", "+one", "+two", "+three", "+four", "+five", "+six", "+seven"]),
+  ])
+  const viewer = frameViewer(document)
+
+  viewer.diffLines(99, 2)
+  assert.match(stripTestAnsi(viewer.diffPanelTitle(99)), /Diff · working · wrap · \[1-2 \/ 8\] ↓/u)
+
+  viewer.diffLines(99, 2, 2)
+  assert.match(stripTestAnsi(viewer.diffPanelTitle(99)), /Diff · working · wrap · \[3-4 \/ 8\] ↑↓/u)
+
+  viewer.diffLines(99, 2, 6)
+  assert.match(stripTestAnsi(viewer.diffPanelTitle(99)), /Diff · working · wrap · \[7-8 \/ 8\] ↑/u)
+
+  viewer.diffLines(99, 8)
+  assert.doesNotMatch(stripTestAnsi(viewer.diffPanelTitle(99)), /\[\d+-\d+ \/ \d+\]/u)
 })
 
 test("frame diff preserves conflict marker styling in structured rows", () => {

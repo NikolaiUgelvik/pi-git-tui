@@ -3,6 +3,7 @@ import { DiffViewerCore } from "./viewer-core.js";
 import { type ViewerRenderCacheStats } from "./viewer-render-cache.js";
 export declare class DiffViewerFrame extends DiffViewerCore {
     private diffMaximumColumn;
+    private diffScrollPosition;
     private readonly renderCache;
     protected invalidateDiffPresentation(): void;
     protected renderCacheStats(): ViewerRenderCacheStats;
@@ -20,6 +21,7 @@ export declare class DiffViewerFrame extends DiffViewerCore {
     protected renderSubtitle(width: number): string;
     protected renderPanelTitle(panel: FocusPanel, width: number, single?: boolean): string;
     private diffColumnHint;
+    private diffScrollHint;
     protected renderFooter(width: number): string;
     private renderOperationFooter;
     private footerSummary;

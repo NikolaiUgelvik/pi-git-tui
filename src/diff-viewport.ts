@@ -19,7 +19,9 @@ export interface DiffViewportResult {
   readonly horizontalOffset: number
   readonly maxVerticalOffset: number
   readonly maxHorizontalOffset: number
+  readonly verticallyScrollable: boolean
   readonly horizontallyScrollable: boolean
+  readonly contentHeight: number
   readonly gutterWidth: number
   readonly contentWidth: number
 }
@@ -192,7 +194,9 @@ export function renderDiffViewport(input: DiffViewportInput): DiffViewportResult
     horizontalOffset,
     maxVerticalOffset,
     maxHorizontalOffset,
+    verticallyScrollable: geometry.scrollable,
     horizontallyScrollable: maxHorizontalOffset > 0,
+    contentHeight: geometry.contentHeight,
     gutterWidth: geometry.gutterWidth,
     contentWidth: geometry.contentWidth,
   }
